@@ -6,7 +6,10 @@ import {
   analyzeLearningCheck,
   type LearningCheckSubmission,
 } from "../features/learning-check";
-import { generateTodaySession } from "../features/progress-orchestrator";
+import {
+  generateNextSession,
+  generateTodaySession,
+} from "../features/progress-orchestrator";
 import type { DemoStudentState } from "../types/shared.types";
 
 export const demoStudentState: DemoStudentState = {
@@ -43,6 +46,12 @@ export const demoLearningCheckSubmission: LearningCheckSubmission = {
 export const demoLearningCheckAnalysis = analyzeLearningCheck({
   submission: demoLearningCheckSubmission,
   todaySession: demoTodaySession,
+});
+
+export const demoNextSession = generateNextSession({
+  studentState: demoStudentState,
+  todaySession: demoTodaySession,
+  learningAnalysis: demoLearningCheckAnalysis,
 });
 
 export const demoCurriculumSteps = getCurriculumMap(demoCurriculum, {
