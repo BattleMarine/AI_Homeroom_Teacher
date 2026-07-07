@@ -16,7 +16,9 @@ AI 담임이 사전 정의된 커리큘럼을 기반으로 오늘 수업을 편�
 | --- | --- |
 | [project-structure.md](./project-structure.md) | 전체 폴더/파일 트리와 각 폴더의 책임을 정의합니다. |
 | [demo-flow.md](./demo-flow.md) | 데모에서 보여줄 화면 흐름과 사용자 행동 흐름을 정리합니다. |
+| [screen-spec.md](./screen-spec.md) | 정적 화면 구현 전 화면별 표시 항목, 사용자 행동, 완료 기준을 정의합니다. |
 | [domain-model.md](./domain-model.md) | 커리큘럼, 학생 상태, 오늘 수업, 학습 후 체크 등 핵심 데이터 개념을 정리합니다. |
+| [orchestration-rules.md](./orchestration-rules.md) | 규칙 기반 오늘 수업 생성, 요구사항 반영, 다음 수업 조율 기준을 정의합니다. |
 | [implementation-roadmap.md](./implementation-roadmap.md) | 구현 순서와 각 단계에서 만들 파일 범위를 정리합니다. |
 | [repository-management.md](./repository-management.md) | GitHub 관리 시 제외해야 할 민감 정보, 로그, 임시 산출물 기준을 정리합니다. |
 
