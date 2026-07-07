@@ -35,9 +35,13 @@ export type TodaySession = {
 };
 
 export type DemoStudentState = {
+  selectedCurriculumId: "stable-log" | "compressed-log" | "practice-log";
   selectedCurriculumTitle: string;
+  currentStepId: string;
   currentStepTitle: string;
   weakConcepts: string[];
   completedStepCount: number;
   totalStepCount: number;
+  completedStepIds: string[];
+  delayedStepIds: string[];
 };

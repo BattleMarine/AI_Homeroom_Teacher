@@ -426,6 +426,12 @@ React 앱 진입점
 AI 담임 홈 정적 화면
 오늘 수업 세션 mock data
 커리큘럼 맵 mock data
+커리큘럼 타입 정의
+안정형/압축형/문제적용형 커리큘럼 mock data
+커리큘럼 목록/현재 단계/다음 단계 조회 서비스
+선택된 커리큘럼과 학생 상태 기반 오늘 수업 생성 로직
+취약 개념 보강 우선 배치 규칙
+수업 시간 제한에 따른 선택 항목 이동 규칙
 기본 스타일
 ```
 
@@ -438,6 +444,22 @@ AI 담임 홈 정적 화면
 다음 수업 조율 엔진
 localStorage 저장
 LLM API 연결
+```
+
+커리큘럼 관리 기능은 다음 파일을 기준으로 구현합니다.
+
+```text
+src/features/curriculum/curriculum.types.ts
+src/features/curriculum/curriculum.data.ts
+src/features/curriculum/curriculum.service.ts
+```
+
+오늘 수업 생성 기능은 다음 파일을 기준으로 구현합니다.
+
+```text
+src/features/progress-orchestrator/progress.types.ts
+src/features/progress-orchestrator/orchestrator.rules.ts
+src/features/progress-orchestrator/session-builder.ts
 ```
 
 ---
