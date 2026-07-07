@@ -432,6 +432,8 @@ AI 담임 홈 정적 화면
 선택된 커리큘럼과 학생 상태 기반 오늘 수업 생성 로직
 취약 개념 보강 우선 배치 규칙
 수업 시간 제한에 따른 선택 항목 이동 규칙
+AI 담임 응답 mock 모듈
+학습 후 체크 결과 분석 로직
 기본 스타일
 ```
 
@@ -440,7 +442,7 @@ AI 담임 홈 정적 화면
 ```text
 커리큘럼 선택 상호작용
 학생 요구사항 반영 로직
-학습 후 체크 입력
+학습 후 체크 입력 UI
 다음 수업 조율 엔진
 localStorage 저장
 LLM API 연결
@@ -460,6 +462,22 @@ src/features/curriculum/curriculum.service.ts
 src/features/progress-orchestrator/progress.types.ts
 src/features/progress-orchestrator/orchestrator.rules.ts
 src/features/progress-orchestrator/session-builder.ts
+```
+
+AI 담임 응답 기능은 다음 파일을 기준으로 구현합니다.
+
+```text
+src/features/teacher-response/teacher-response.types.ts
+src/features/teacher-response/teacher-response.mock.ts
+src/features/teacher-response/teacher-response.service.ts
+```
+
+학습 후 체크 분석 기능은 다음 파일을 기준으로 구현합니다.
+
+```text
+src/features/learning-check/learning-check.types.ts
+src/features/learning-check/learning-check.rules.ts
+src/features/learning-check/learning-check.service.ts
 ```
 
 ---
