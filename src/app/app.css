@@ -64,6 +64,8 @@ button:hover {
 .today-session,
 .teacher-note,
 .weak-concepts,
+.learning-summary,
+.next-session,
 .curriculum-map,
 .status-panel {
   background: #fff;
@@ -177,6 +179,8 @@ p {
 .today-session,
 .teacher-note,
 .weak-concepts,
+.learning-summary,
+.next-session,
 .curriculum-map {
   padding: 24px;
 }
@@ -198,9 +202,47 @@ p {
 }
 
 .lesson-list,
+.compact-lesson-list,
 .side-stack {
   display: grid;
   gap: 14px;
+}
+
+.adjustment-grid {
+  display: grid;
+  gap: 20px;
+  grid-template-columns: 360px minmax(0, 1fr);
+  margin-top: 20px;
+}
+
+.summary-list {
+  display: grid;
+  gap: 12px;
+  margin: 0 0 18px;
+}
+
+.summary-list div {
+  border-bottom: 1px solid #e5ebf5;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: 96px minmax(0, 1fr);
+  padding-bottom: 12px;
+}
+
+.summary-list dt {
+  color: #60718b;
+  font-weight: 800;
+}
+
+.summary-list dd {
+  color: #172033;
+  font-weight: 800;
+  margin: 0;
+}
+
+.teacher-comment {
+  color: #1f4eb3;
+  font-weight: 700;
 }
 
 .lesson-item {
@@ -315,7 +357,8 @@ p {
 
 @media (max-width: 900px) {
   .hero-layout,
-  .content-grid {
+  .content-grid,
+  .adjustment-grid {
     grid-template-columns: 1fr;
   }
 
@@ -338,6 +381,8 @@ p {
   .today-session,
   .teacher-note,
   .weak-concepts,
+  .learning-summary,
+  .next-session,
   .curriculum-map {
     padding: 18px;
   }
