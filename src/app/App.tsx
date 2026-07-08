@@ -1,11 +1,26 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
+  getCurriculumMap,
   getCurriculums,
   type Curriculum,
   type CurriculumId,
 } from "../features/curriculum";
-import type { LearningRecommendation } from "../features/learning-check";
-import { createDemoSessionData } from "../mock/demo-session.data";
+import {
+  analyzeLearningCheck,
+  type LearningCheckLevel,
+  type LearningCheckSubmission,
+  type LearningRecommendation,
+} from "../features/learning-check";
+import {
+  applyStudentRequestToProgress,
+  generateNextSession,
+  generateTodaySession,
+  type StudentRequestKind,
+} from "../features/progress-orchestrator";
+import {
+  createDemoLearningCheckSubmission,
+  createDemoSessionData,
+} from "../mock/demo-session.data";
 import type { LessonItem, LessonItemKind } from "../types/shared.types";
 
 const kindLabels: Record<LessonItemKind, string> = {
@@ -24,27 +39,212 @@ const recommendationLabels: Record<LearningRecommendation, string> = {
 
 const curriculumOptions = getCurriculums();
 
+const studentRequestOptions: Array<{
+  kind: StudentRequestKind;
+  label: string;
+  description: string;
+}> = [
+  {
+    kind: "default",
+    label: "기본 편성",
+    description: "현재 진도와 취약 개념을 기준으로 편성합니다.",
+  },
+  {
+    kind: "short_time",
+    label: "오늘 시간이 부족해요",
+    description: "핵심 보강과 필수 확인만 남깁니다.",
+  },
+  {
+    kind: "review_first",
+    label: "복습 위주",
+    description: "새 진도보다 헷갈린 개념을 먼저 안정시킵니다.",
+  },
+  {
+    kind: "confused_concept",
+    label: "특정 개념이 헷갈려요",
+    description: "현재 단계 개념 하나를 보강 흐름에 반영합니다.",
+  },
+  {
+    kind: "reduce_new_lecture",
+    label: "새 강의 줄이기",
+    description: "새 강의 비중을 줄이고 확인 중심으로 조정합니다.",
+  },
+];
+
 export function App() {
   const [selectedCurriculumId, setSelectedCurriculumId] =
     useState<CurriculumId>("stable-log");
-  const {
-    demoCurriculumSteps,
-    demoLearningCheckAnalysis,
-    demoLearningCheckSubmission,
-    demoNextSession,
-    demoStudentState,
-    demoTodaySession,
-  } = useMemo(
+  const [learningCheckSubmission, setLearningCheckSubmission] =
+    useState<LearningCheckSubmission>(
+      () => createDemoSessionData("stable-log").demoLearningCheckSubmission,
+    );
+  const [studentRequestKind, setStudentRequestKind] =
+    useState<StudentRequestKind>("default");
+  const { demoCurriculum, demoStudentState } = useMemo(
     () => createDemoSessionData(selectedCurriculumId),
     [selectedCurriculumId],
   );
+  const currentStepConcepts = useMemo(
+    () =>
+      demoCurriculum.steps.find((step) => step.id === demoStudentState.currentStepId)
+        ?.conceptTags ?? [],
+    [demoCurriculum.steps, demoStudentState.currentStepId],
+  );
+  const studentRequestAdjustment = useMemo(
+    () =>
+      applyStudentRequestToProgress({
+        studentState: demoStudentState,
+        requestKind: studentRequestKind,
+        focusConcept: demoStudentState.weakConcepts[0],
+        currentStepConcepts,
+      }),
+    [currentStepConcepts, demoStudentState, studentRequestKind],
+  );
+  const adjustedStudentState = studentRequestAdjustment.adjustedStudentState;
+  const demoTodaySession = useMemo(
+    () =>
+      generateTodaySession({
+        studentState: adjustedStudentState,
+        maxMinutes: studentRequestAdjustment.maxMinutes,
+      }),
+    [adjustedStudentState, studentRequestAdjustment.maxMinutes],
+  );
+  const demoCurriculumSteps = useMemo(
+    () =>
+      getCurriculumMap(demoCurriculum, {
+        currentStepId: adjustedStudentState.currentStepId,
+        completedStepIds: adjustedStudentState.completedStepIds,
+        delayedStepIds: adjustedStudentState.delayedStepIds,
+        weakConcepts: adjustedStudentState.weakConcepts,
+      }),
+    [adjustedStudentState, demoCurriculum],
+  );
+  const defaultLearningCheckSubmission = useMemo(
+    () =>
+      createDemoLearningCheckSubmission(
+        demoTodaySession,
+        adjustedStudentState.weakConcepts.slice(0, 1),
+      ),
+    [adjustedStudentState.weakConcepts, demoTodaySession],
+  );
+  useEffect(() => {
+    setLearningCheckSubmission(defaultLearningCheckSubmission);
+  }, [defaultLearningCheckSubmission]);
+  const demoLearningCheckAnalysis = useMemo(
+    () =>
+      analyzeLearningCheck({
+        submission: learningCheckSubmission,
+        todaySession: demoTodaySession,
+      }),
+    [learningCheckSubmission, demoTodaySession],
+  );
+  const demoNextSession = useMemo(
+    () =>
+      generateNextSession({
+        studentState: adjustedStudentState,
+        todaySession: demoTodaySession,
+        learningAnalysis: demoLearningCheckAnalysis,
+      }),
+    [adjustedStudentState, demoLearningCheckAnalysis, demoTodaySession],
+  );
+  const conceptOptions = useMemo(
+    () =>
+      [
+        ...new Set([
+          ...adjustedStudentState.weakConcepts,
+          ...demoTodaySession.items.flatMap((item) => item.conceptTags),
+        ]),
+      ],
+    [adjustedStudentState.weakConcepts, demoTodaySession.items],
+  );
   const progressPercent = Math.round(
-    (demoStudentState.completedStepCount / demoStudentState.totalStepCount) * 100,
+    (adjustedStudentState.completedStepCount / adjustedStudentState.totalStepCount) *
+      100,
   );
   const problemAccuracyPercent =
     demoLearningCheckAnalysis.problemAccuracy === null
       ? null
       : Math.round(demoLearningCheckAnalysis.problemAccuracy * 100);
+
+  function handleSelectCurriculum(curriculumId: CurriculumId) {
+    setSelectedCurriculumId(curriculumId);
+    setStudentRequestKind("default");
+  }
+
+  function updateLearningLevel(
+    field: "understandingLevel" | "focusLevel",
+    value: string,
+  ) {
+    setLearningCheckSubmission((currentSubmission) => ({
+      ...currentSubmission,
+      [field]: Number(value) as LearningCheckLevel,
+    }));
+  }
+
+  function updateProblemCorrectCount(value: string) {
+    const parsedValue = Number(value);
+    const safeValue = Number.isFinite(parsedValue) ? parsedValue : 0;
+    const nextCorrectCount = Math.min(
+      Math.max(safeValue, 0),
+      learningCheckSubmission.problemResult.totalCount,
+    );
+
+    setLearningCheckSubmission((currentSubmission) => ({
+      ...currentSubmission,
+      problemResult: {
+        ...currentSubmission.problemResult,
+        correctCount: nextCorrectCount,
+      },
+    }));
+  }
+
+  function updateProblemTotalCount(value: string) {
+    const parsedValue = Number(value);
+    const safeValue = Number.isFinite(parsedValue) ? parsedValue : 0;
+    const nextTotalCount = Math.max(safeValue, 0);
+
+    setLearningCheckSubmission((currentSubmission) => ({
+      ...currentSubmission,
+      problemResult: {
+        correctCount: Math.min(
+          currentSubmission.problemResult.correctCount,
+          nextTotalCount,
+        ),
+        totalCount: nextTotalCount,
+      },
+    }));
+  }
+
+  function toggleConfusedConcept(concept: string) {
+    setLearningCheckSubmission((currentSubmission) => {
+      const hasConcept = currentSubmission.confusedConcepts.includes(concept);
+      const confusedConcepts = hasConcept
+        ? currentSubmission.confusedConcepts.filter((item) => item !== concept)
+        : [...currentSubmission.confusedConcepts, concept];
+
+      return {
+        ...currentSubmission,
+        confusedConcepts,
+      };
+    });
+  }
+
+  function toggleCompletedItem(itemId: string) {
+    setLearningCheckSubmission((currentSubmission) => {
+      const completedItemIds = currentSubmission.completedItemIds.includes(itemId)
+        ? currentSubmission.completedItemIds.filter((id) => id !== itemId)
+        : [...currentSubmission.completedItemIds, itemId];
+      const skippedItemIds = demoTodaySession.items
+        .filter((item) => !completedItemIds.includes(item.id))
+        .map((item) => item.id);
+
+      return {
+        ...currentSubmission,
+        completedItemIds,
+        skippedItemIds,
+      };
+    });
+  }
 
   return (
     <main className="app-shell">
@@ -56,7 +256,11 @@ export function App() {
             <p className="hero-copy">{demoTodaySession.teacherComment}</p>
             <div className="action-row" aria-label="오늘 수업 주요 행동">
               <button type="button">오늘 수업 시작</button>
-              <button type="button" className="secondary-button">
+              <button
+                type="button"
+                className="secondary-button"
+                onClick={() => setStudentRequestKind("short_time")}
+              >
                 오늘 시간이 부족해요
               </button>
               <button type="button" className="ghost-button">
@@ -67,13 +271,13 @@ export function App() {
 
           <aside className="status-panel" aria-label="현재 학습 상태">
             <div className="status-label">현재 커리큘럼</div>
-            <strong>{demoStudentState.selectedCurriculumTitle}</strong>
-            <span>{demoStudentState.currentStepTitle} 진행 중</span>
+            <strong>{adjustedStudentState.selectedCurriculumTitle}</strong>
+            <span>{adjustedStudentState.currentStepTitle} 진행 중</span>
             <div className="progress-track" aria-label={`진도율 ${progressPercent}%`}>
               <div style={{ width: `${progressPercent}%` }} />
             </div>
             <span>
-              {demoStudentState.completedStepCount}/{demoStudentState.totalStepCount}단계 완료
+              {adjustedStudentState.completedStepCount}/{adjustedStudentState.totalStepCount}단계 완료
             </span>
           </aside>
         </div>
@@ -93,10 +297,41 @@ export function App() {
               curriculum={curriculum}
               isSelected={curriculum.id === selectedCurriculumId}
               key={curriculum.id}
-              onSelect={setSelectedCurriculumId}
+              onSelect={handleSelectCurriculum}
             />
           ))}
         </div>
+      </section>
+
+      <section className="student-request-panel" aria-labelledby="student-request-title">
+        <div className="section-heading">
+          <div>
+            <span className="eyebrow">학생 요구사항 반영</span>
+            <h2 id="student-request-title">오늘 상태에 맞게 수업량을 조정하세요</h2>
+          </div>
+        </div>
+
+        <div className="request-card-list">
+          {studentRequestOptions.map((requestOption) => (
+            <button
+              type="button"
+              aria-pressed={studentRequestKind === requestOption.kind}
+              className={`request-card ${
+                studentRequestKind === requestOption.kind ? "request-card-selected" : ""
+              }`}
+              key={requestOption.kind}
+              onClick={() => setStudentRequestKind(requestOption.kind)}
+            >
+              <strong>{requestOption.label}</strong>
+              <span>{requestOption.description}</span>
+            </button>
+          ))}
+        </div>
+
+        <p className="request-note">
+          <strong>{studentRequestAdjustment.summary}</strong>
+          {studentRequestAdjustment.teacherNote}
+        </p>
       </section>
 
       <section className="content-grid" aria-label="오늘 수업과 커리큘럼 상태">
@@ -144,7 +379,7 @@ export function App() {
             <span className="eyebrow">보강 필요 개념</span>
             <h2 id="weak-title">오늘 먼저 잡을 부분</h2>
             <div className="tag-row strong-tags">
-              {demoStudentState.weakConcepts.map((concept) => (
+              {adjustedStudentState.weakConcepts.map((concept) => (
                 <span key={concept}>{concept}</span>
               ))}
             </div>
@@ -157,24 +392,115 @@ export function App() {
           <div className="section-heading">
             <div>
               <span className="eyebrow">학습 후 체크</span>
-              <h2 id="learning-check-title">오늘 결과를 이렇게 반영했습니다</h2>
+              <h2 id="learning-check-title">오늘 결과를 입력하세요</h2>
+            </div>
+          </div>
+
+          <div className="check-form" aria-label="학습 후 체크 입력">
+            <label className="field-group">
+              <span>이해도</span>
+              <div className="range-row">
+                <input
+                  type="range"
+                  min="1"
+                  max="5"
+                  value={learningCheckSubmission.understandingLevel}
+                  onChange={(event) =>
+                    updateLearningLevel("understandingLevel", event.target.value)
+                  }
+                />
+                <strong>{learningCheckSubmission.understandingLevel}/5</strong>
+              </div>
+            </label>
+
+            <label className="field-group">
+              <span>집중도</span>
+              <div className="range-row">
+                <input
+                  type="range"
+                  min="1"
+                  max="5"
+                  value={learningCheckSubmission.focusLevel}
+                  onChange={(event) =>
+                    updateLearningLevel("focusLevel", event.target.value)
+                  }
+                />
+                <strong>{learningCheckSubmission.focusLevel}/5</strong>
+              </div>
+            </label>
+
+            <div className="field-group">
+              <span>확인 문제</span>
+              <div className="problem-input-row">
+                <label>
+                  <input
+                    type="number"
+                    min="0"
+                    max={learningCheckSubmission.problemResult.totalCount}
+                    value={learningCheckSubmission.problemResult.correctCount}
+                    onChange={(event) => updateProblemCorrectCount(event.target.value)}
+                  />
+                  <span>정답 수</span>
+                </label>
+                <label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={learningCheckSubmission.problemResult.totalCount}
+                    onChange={(event) => updateProblemTotalCount(event.target.value)}
+                  />
+                  <span>전체 문항</span>
+                </label>
+              </div>
+            </div>
+
+            <div className="field-group">
+              <span>헷갈린 개념</span>
+              <div className="checkbox-grid">
+                {conceptOptions.map((concept) => (
+                  <label className="check-chip" key={concept}>
+                    <input
+                      type="checkbox"
+                      checked={learningCheckSubmission.confusedConcepts.includes(concept)}
+                      onChange={() => toggleConfusedConcept(concept)}
+                    />
+                    <span>{concept}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            <div className="field-group">
+              <span>완료한 항목</span>
+              <div className="item-check-list">
+                {demoTodaySession.items.map((item) => (
+                  <label key={item.id}>
+                    <input
+                      type="checkbox"
+                      checked={learningCheckSubmission.completedItemIds.includes(item.id)}
+                      onChange={() => toggleCompletedItem(item.id)}
+                    />
+                    <span>{item.title}</span>
+                  </label>
+                ))}
+              </div>
             </div>
           </div>
 
           <dl className="summary-list">
             <div>
               <dt>이해도</dt>
-              <dd>{demoLearningCheckSubmission.understandingLevel}/5</dd>
+              <dd>{learningCheckSubmission.understandingLevel}/5</dd>
             </div>
             <div>
               <dt>집중도</dt>
-              <dd>{demoLearningCheckSubmission.focusLevel}/5</dd>
+              <dd>{learningCheckSubmission.focusLevel}/5</dd>
             </div>
             <div>
               <dt>확인 문제</dt>
               <dd>
-                {demoLearningCheckSubmission.problemResult.correctCount}/
-                {demoLearningCheckSubmission.problemResult.totalCount}개 정답
+                {learningCheckSubmission.problemResult.correctCount}/
+                {learningCheckSubmission.problemResult.totalCount}개 정답
                 {problemAccuracyPercent !== null ? ` · ${problemAccuracyPercent}%` : ""}
               </dd>
             </div>

@@ -11,6 +11,7 @@ import {
 import {
   generateNextSession,
   generateTodaySession,
+  type GeneratedTodaySession,
 } from "../features/progress-orchestrator";
 import type { DemoStudentState } from "../types/shared.types";
 
@@ -58,18 +59,10 @@ export function createDemoSessionData(selectedCurriculumId: CurriculumId = "stab
     studentState: demoStudentState,
   });
 
-  const demoLearningCheckSubmission: LearningCheckSubmission = {
-    sessionDate: demoTodaySession.date,
-    completedItemIds: demoTodaySession.items.slice(0, 2).map((item) => item.id),
-    skippedItemIds: demoTodaySession.items.slice(2).map((item) => item.id),
-    understandingLevel: 2,
-    focusLevel: 3,
-    confusedConcepts: progressPreset.weakConcepts.slice(0, 1),
-    problemResult: {
-      correctCount: 2,
-      totalCount: 5,
-    },
-  };
+  const demoLearningCheckSubmission = createDemoLearningCheckSubmission(
+    demoTodaySession,
+    progressPreset.weakConcepts.slice(0, 1),
+  );
 
   const demoLearningCheckAnalysis = analyzeLearningCheck({
     submission: demoLearningCheckSubmission,
@@ -97,6 +90,24 @@ export function createDemoSessionData(selectedCurriculumId: CurriculumId = "stab
     demoLearningCheckAnalysis,
     demoNextSession,
     demoCurriculumSteps,
+  };
+}
+
+export function createDemoLearningCheckSubmission(
+  todaySession: GeneratedTodaySession,
+  confusedConcepts: string[],
+): LearningCheckSubmission {
+  return {
+    sessionDate: todaySession.date,
+    completedItemIds: todaySession.items.slice(0, 2).map((item) => item.id),
+    skippedItemIds: todaySession.items.slice(2).map((item) => item.id),
+    understandingLevel: 2,
+    focusLevel: 3,
+    confusedConcepts,
+    problemResult: {
+      correctCount: 2,
+      totalCount: 5,
+    },
   };
 }
 

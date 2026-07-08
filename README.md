@@ -436,6 +436,9 @@ AI 담임 응답 mock 모듈
 학습 후 체크 결과 분석 로직
 학습 결과 기반 다음 수업 조율 엔진
 커리큘럼 선택 상호작용
+학생 요구사항 선택 UI
+학생 요구사항 기반 오늘 수업 조정 로직
+학습 후 체크 입력 UI
 학습 후 체크 요약 및 다음 수업 조율 결과 UI
 기본 스타일
 ```
@@ -443,8 +446,6 @@ AI 담임 응답 mock 모듈
 아직 구현되지 않은 내용:
 
 ```text
-학생 요구사항 반영 로직
-학습 후 체크 입력 UI
 localStorage 저장
 LLM API 연결
 ```
@@ -464,6 +465,8 @@ src/features/progress-orchestrator/progress.types.ts
 src/features/progress-orchestrator/orchestrator.rules.ts
 src/features/progress-orchestrator/session-builder.ts
 src/features/progress-orchestrator/next-session-builder.ts
+src/features/progress-orchestrator/student-request.types.ts
+src/features/progress-orchestrator/student-request.rules.ts
 ```
 
 AI 담임 응답 기능은 다음 파일을 기준으로 구현합니다.

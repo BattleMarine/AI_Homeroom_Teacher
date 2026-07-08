@@ -62,6 +62,7 @@ button:hover {
 
 .top-band,
 .curriculum-selector,
+.student-request-panel,
 .today-session,
 .teacher-note,
 .weak-concepts,
@@ -181,6 +182,7 @@ p {
 .teacher-note,
 .weak-concepts,
 .curriculum-selector,
+.student-request-panel,
 .learning-summary,
 .next-session,
 .curriculum-map {
@@ -188,6 +190,10 @@ p {
 }
 
 .curriculum-selector {
+  margin-top: 20px;
+}
+
+.student-request-panel {
   margin-top: 20px;
 }
 
@@ -251,10 +257,128 @@ p {
   font-weight: 700;
 }
 
+.check-form {
+  border-bottom: 1px solid #e5ebf5;
+  display: grid;
+  gap: 16px;
+  margin-bottom: 18px;
+  padding-bottom: 18px;
+}
+
+.field-group {
+  display: grid;
+  gap: 8px;
+}
+
+.field-group > span {
+  color: #60718b;
+  font-size: 0.88rem;
+  font-weight: 800;
+}
+
+.range-row,
+.problem-input-row {
+  align-items: center;
+  display: grid;
+  gap: 10px;
+}
+
+.range-row {
+  grid-template-columns: minmax(0, 1fr) 48px;
+}
+
+.range-row input {
+  accent-color: #2264e5;
+  width: 100%;
+}
+
+.range-row strong {
+  color: #1f4eb3;
+  text-align: right;
+}
+
+.problem-input-row {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.problem-input-row label {
+  display: grid;
+  gap: 6px;
+}
+
+.problem-input-row input {
+  border: 1px solid #c8d3e6;
+  border-radius: 8px;
+  color: #172033;
+  font: inherit;
+  font-weight: 800;
+  padding: 10px;
+  width: 100%;
+}
+
+.problem-input-row span {
+  color: #60718b;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.checkbox-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.check-chip {
+  align-items: center;
+  background: #f0f4fa;
+  border: 1px solid #dce4f0;
+  border-radius: 999px;
+  color: #3f587a;
+  display: inline-flex;
+  font-size: 0.84rem;
+  font-weight: 800;
+  gap: 6px;
+  padding: 7px 10px;
+}
+
+.check-chip:has(input:checked) {
+  background: #fff4df;
+  border-color: #e3b866;
+  color: #8a5800;
+}
+
+.item-check-list {
+  display: grid;
+  gap: 8px;
+}
+
+.item-check-list label {
+  align-items: flex-start;
+  border: 1px solid #dce4f0;
+  border-radius: 8px;
+  color: #172033;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: auto minmax(0, 1fr);
+  padding: 10px;
+}
+
+.item-check-list span {
+  color: #485b78;
+  font-weight: 700;
+  line-height: 1.5;
+}
+
 .curriculum-card-list {
   display: grid;
   gap: 14px;
   grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.request-card-list {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
 }
 
 .curriculum-card {
@@ -297,6 +421,52 @@ p {
   font-style: normal;
   font-weight: 700;
   line-height: 1.5;
+}
+
+.request-card {
+  background: #fff;
+  border: 1px solid #dce4f0;
+  color: #172033;
+  display: grid;
+  gap: 8px;
+  min-height: 120px;
+  padding: 16px;
+  text-align: left;
+}
+
+.request-card:hover {
+  background: #f8fbff;
+}
+
+.request-card-selected {
+  background: #eef4ff;
+  border-color: #2264e5;
+  box-shadow: inset 0 0 0 1px #2264e5;
+}
+
+.request-card strong {
+  font-size: 0.98rem;
+}
+
+.request-card span {
+  color: #60718b;
+  font-size: 0.84rem;
+  font-weight: 700;
+  line-height: 1.5;
+}
+
+.request-note {
+  background: #f6f8fc;
+  border: 1px solid #e1e8f3;
+  border-radius: 8px;
+  margin: 16px 0 0;
+  padding: 14px 16px;
+}
+
+.request-note strong {
+  color: #1f4eb3;
+  display: block;
+  margin-bottom: 4px;
 }
 
 .lesson-item {
@@ -413,7 +583,8 @@ p {
   .hero-layout,
   .content-grid,
   .adjustment-grid,
-  .curriculum-card-list {
+  .curriculum-card-list,
+  .request-card-list {
     grid-template-columns: 1fr;
   }
 
@@ -437,6 +608,7 @@ p {
   .teacher-note,
   .weak-concepts,
   .curriculum-selector,
+  .student-request-panel,
   .learning-summary,
   .next-session,
   .curriculum-map {
@@ -455,5 +627,9 @@ p {
 
   button {
     width: 100%;
+  }
+
+  .problem-input-row {
+    grid-template-columns: 1fr;
   }
 }
