@@ -1,12 +1,11 @@
+import { useMemo, useState } from "react";
 import {
-  demoCurriculumSteps,
-  demoLearningCheckAnalysis,
-  demoLearningCheckSubmission,
-  demoNextSession,
-  demoStudentState,
-  demoTodaySession,
-} from "../mock/demo-session.data";
+  getCurriculums,
+  type Curriculum,
+  type CurriculumId,
+} from "../features/curriculum";
 import type { LearningRecommendation } from "../features/learning-check";
+import { createDemoSessionData } from "../mock/demo-session.data";
 import type { LessonItem, LessonItemKind } from "../types/shared.types";
 
 const kindLabels: Record<LessonItemKind, string> = {
@@ -23,7 +22,22 @@ const recommendationLabels: Record<LearningRecommendation, string> = {
   keep_pace: "진도 유지",
 };
 
+const curriculumOptions = getCurriculums();
+
 export function App() {
+  const [selectedCurriculumId, setSelectedCurriculumId] =
+    useState<CurriculumId>("stable-log");
+  const {
+    demoCurriculumSteps,
+    demoLearningCheckAnalysis,
+    demoLearningCheckSubmission,
+    demoNextSession,
+    demoStudentState,
+    demoTodaySession,
+  } = useMemo(
+    () => createDemoSessionData(selectedCurriculumId),
+    [selectedCurriculumId],
+  );
   const progressPercent = Math.round(
     (demoStudentState.completedStepCount / demoStudentState.totalStepCount) * 100,
   );
@@ -62,6 +76,26 @@ export function App() {
               {demoStudentState.completedStepCount}/{demoStudentState.totalStepCount}단계 완료
             </span>
           </aside>
+        </div>
+      </section>
+
+      <section className="curriculum-selector" aria-labelledby="curriculum-selector-title">
+        <div className="section-heading">
+          <div>
+            <span className="eyebrow">커리큘럼 선택</span>
+            <h2 id="curriculum-selector-title">오늘 수업 기준을 선택하세요</h2>
+          </div>
+        </div>
+
+        <div className="curriculum-card-list">
+          {curriculumOptions.map((curriculum) => (
+            <CurriculumCard
+              curriculum={curriculum}
+              isSelected={curriculum.id === selectedCurriculumId}
+              key={curriculum.id}
+              onSelect={setSelectedCurriculumId}
+            />
+          ))}
         </div>
       </section>
 
@@ -205,6 +239,30 @@ export function App() {
         </ol>
       </section>
     </main>
+  );
+}
+
+function CurriculumCard({
+  curriculum,
+  isSelected,
+  onSelect,
+}: {
+  curriculum: Curriculum;
+  isSelected: boolean;
+  onSelect: (curriculumId: CurriculumId) => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={isSelected}
+      className={`curriculum-card ${isSelected ? "curriculum-card-selected" : ""}`}
+      onClick={() => onSelect(curriculum.id)}
+    >
+      <span>{curriculum.pace}</span>
+      <strong>{curriculum.title}</strong>
+      <p>{curriculum.description}</p>
+      <em>{curriculum.recommendedFor.join(" · ")}</em>
+    </button>
   );
 }
 

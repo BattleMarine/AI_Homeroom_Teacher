@@ -61,6 +61,7 @@ button:hover {
 }
 
 .top-band,
+.curriculum-selector,
 .today-session,
 .teacher-note,
 .weak-concepts,
@@ -179,10 +180,15 @@ p {
 .today-session,
 .teacher-note,
 .weak-concepts,
+.curriculum-selector,
 .learning-summary,
 .next-session,
 .curriculum-map {
   padding: 24px;
+}
+
+.curriculum-selector {
+  margin-top: 20px;
 }
 
 .section-heading {
@@ -243,6 +249,54 @@ p {
 .teacher-comment {
   color: #1f4eb3;
   font-weight: 700;
+}
+
+.curriculum-card-list {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.curriculum-card {
+  background: #fff;
+  border: 1px solid #dce4f0;
+  color: #172033;
+  display: grid;
+  gap: 8px;
+  padding: 18px;
+  text-align: left;
+}
+
+.curriculum-card:hover {
+  background: #f8fbff;
+}
+
+.curriculum-card-selected {
+  background: #eef4ff;
+  border-color: #2264e5;
+  box-shadow: inset 0 0 0 1px #2264e5;
+}
+
+.curriculum-card span {
+  color: #1f4eb3;
+  font-size: 0.84rem;
+  font-weight: 800;
+}
+
+.curriculum-card strong {
+  font-size: 1.08rem;
+}
+
+.curriculum-card p {
+  margin-bottom: 0;
+}
+
+.curriculum-card em {
+  color: #60718b;
+  font-size: 0.84rem;
+  font-style: normal;
+  font-weight: 700;
+  line-height: 1.5;
 }
 
 .lesson-item {
@@ -358,7 +412,8 @@ p {
 @media (max-width: 900px) {
   .hero-layout,
   .content-grid,
-  .adjustment-grid {
+  .adjustment-grid,
+  .curriculum-card-list {
     grid-template-columns: 1fr;
   }
 
@@ -381,6 +436,7 @@ p {
   .today-session,
   .teacher-note,
   .weak-concepts,
+  .curriculum-selector,
   .learning-summary,
   .next-session,
   .curriculum-map {
