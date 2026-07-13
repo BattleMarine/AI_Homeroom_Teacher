@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   getCurriculumMap,
   getCurriculums,
@@ -40,6 +40,8 @@ const recommendationLabels: Record<LearningRecommendation, string> = {
 
 const curriculumOptions = getCurriculums();
 
+type HighlightTarget = "request" | "today" | "reason" | "curriculum-map";
+
 const studentRequestOptions: Array<{
   kind: StudentRequestKind;
   label: string;
@@ -74,6 +76,10 @@ const studentRequestOptions: Array<{
 
 export function App() {
   const [initialDemoStorageState] = useState(() => readDemoStorageState());
+  const requestSectionRef = useRef<HTMLElement | null>(null);
+  const todaySessionRef = useRef<HTMLElement | null>(null);
+  const reasonSectionRef = useRef<HTMLElement | null>(null);
+  const curriculumMapRef = useRef<HTMLElement | null>(null);
   const [selectedCurriculumId, setSelectedCurriculumId] =
     useState<CurriculumId>(
       () => initialDemoStorageState?.selectedCurriculumId ?? "stable-log",
@@ -86,6 +92,7 @@ export function App() {
     useState<StudentRequestKind>(
       () => initialDemoStorageState?.studentRequestKind ?? "default",
     );
+  const [highlightTarget, setHighlightTarget] = useState<HighlightTarget | null>(null);
   const { demoCurriculum, demoStudentState } = useMemo(
     () => createDemoSessionData(selectedCurriculumId),
     [selectedCurriculumId],
@@ -192,6 +199,24 @@ export function App() {
   function handleSelectStudentRequest(requestKind: StudentRequestKind) {
     setStudentRequestKind(requestKind);
     setLearningCheckSubmission(null);
+    scrollToTarget("request");
+  }
+
+  function scrollToTarget(target: HighlightTarget) {
+    const targetElement = {
+      request: requestSectionRef.current,
+      today: todaySessionRef.current,
+      reason: reasonSectionRef.current,
+      "curriculum-map": curriculumMapRef.current,
+    }[target];
+
+    if (!targetElement) {
+      return;
+    }
+
+    targetElement.scrollIntoView({ behavior: "smooth", block: "start" });
+    setHighlightTarget(target);
+    window.setTimeout(() => setHighlightTarget(null), 1600);
   }
 
   function updateLearningLevel(
@@ -281,7 +306,9 @@ export function App() {
             <h1 id="page-title">오늘 수업은 이렇게 진행하겠습니다</h1>
             <p className="hero-copy">{demoTodaySession.teacherComment}</p>
             <div className="action-row" aria-label="오늘 수업 주요 행동">
-              <button type="button">오늘 수업 시작</button>
+              <button type="button" onClick={() => scrollToTarget("today")}>
+                오늘 수업 시작
+              </button>
               <button
                 type="button"
                 className="secondary-button"
@@ -289,8 +316,19 @@ export function App() {
               >
                 오늘 시간이 부족해요
               </button>
-              <button type="button" className="ghost-button">
+              <button
+                type="button"
+                className="ghost-button"
+                onClick={() => scrollToTarget("reason")}
+              >
                 왜 이렇게 배정됐나요?
+              </button>
+              <button
+                type="button"
+                className="ghost-button"
+                onClick={() => scrollToTarget("curriculum-map")}
+              >
+                전체 커리큘럼 보기
               </button>
             </div>
           </div>
@@ -329,7 +367,13 @@ export function App() {
         </div>
       </section>
 
-      <section className="student-request-panel" aria-labelledby="student-request-title">
+      <section
+        className={`student-request-panel ${
+          highlightTarget === "request" ? "section-highlight" : ""
+        }`}
+        ref={requestSectionRef}
+        aria-labelledby="student-request-title"
+      >
         <div className="section-heading">
           <div>
             <span className="eyebrow">학생 요구사항 반영</span>
@@ -361,7 +405,12 @@ export function App() {
       </section>
 
       <section className="content-grid" aria-label="오늘 수업과 커리큘럼 상태">
-        <article className="today-session">
+        <article
+          className={`today-session ${
+            highlightTarget === "today" ? "section-highlight" : ""
+          }`}
+          ref={todaySessionRef}
+        >
           <div className="section-heading">
             <div>
               <span className="eyebrow">오늘 목표</span>
@@ -395,7 +444,13 @@ export function App() {
         </article>
 
         <aside className="side-stack">
-          <section className="teacher-note" aria-labelledby="reason-title">
+          <section
+            className={`teacher-note ${
+              highlightTarget === "reason" ? "section-highlight" : ""
+            }`}
+            ref={reasonSectionRef}
+            aria-labelledby="reason-title"
+          >
             <span className="eyebrow">AI 담임 판단</span>
             <h2 id="reason-title">왜 이렇게 배정됐나요?</h2>
             <p>{demoTodaySession.adjustmentReason}</p>
@@ -569,14 +624,24 @@ export function App() {
         </article>
       </section>
 
-      <section className="curriculum-map" aria-labelledby="map-title">
+      <section
+        className={`curriculum-map ${
+          highlightTarget === "curriculum-map" ? "section-highlight" : ""
+        }`}
+        ref={curriculumMapRef}
+        aria-labelledby="map-title"
+      >
         <div className="section-heading">
           <div>
             <span className="eyebrow">커리큘럼 맵</span>
             <h2 id="map-title">진도와 취약 개념 상태</h2>
           </div>
-          <button type="button" className="secondary-button">
-            전체 커리큘럼 보기
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={() => scrollToTarget("today")}
+          >
+            오늘 수업으로 돌아가기
           </button>
         </div>
 

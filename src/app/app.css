@@ -213,6 +213,16 @@ p {
   white-space: nowrap;
 }
 
+.section-highlight {
+  border-color: #2264e5;
+  box-shadow:
+    0 14px 36px rgba(23, 32, 51, 0.06),
+    0 0 0 3px rgba(34, 100, 229, 0.16);
+  transition:
+    border-color 180ms ease,
+    box-shadow 180ms ease;
+}
+
 .lesson-list,
 .compact-lesson-list,
 .side-stack {
