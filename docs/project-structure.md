@@ -35,8 +35,9 @@ AI_Homeroom_Teacher/
     app/
       App.tsx
       main.tsx
-      routes.tsx
       app.css
+      demo-flow.types.ts
+      demo-storage.ts
     components/
       ai-teacher/
         TeacherComment.tsx
@@ -99,11 +100,13 @@ AI_Homeroom_Teacher/
 | 파일 | 역할 |
 | --- | --- |
 | `main.tsx` | 앱 렌더링 진입점입니다. |
-| `App.tsx` | 전체 화면 흐름을 조립합니다. |
+| `App.tsx` | 스텝형 인터랙션 카드 흐름을 조립합니다. |
+| `demo-flow.types.ts` | 데모 단계 타입을 정의합니다. |
+| `demo-storage.ts` | 데모용 localStorage 임시 저장과 복원을 담당합니다. |
 | `routes.tsx` | 화면 단위 라우팅이 필요할 때 사용합니다. 초기 데모에서는 생략할 수 있습니다. |
 | `app.css` | 전역 스타일 또는 앱 레벨 스타일을 둡니다. |
 
-초기 데모에서는 복잡한 라우팅보다 단일 페이지 상태 전환을 우선합니다.
+초기 데모에서는 복잡한 라우팅보다 단일 페이지의 단계 상태 전환을 우선합니다.
 
 ## `src/components`
 

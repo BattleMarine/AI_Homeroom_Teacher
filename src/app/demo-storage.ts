@@ -1,6 +1,7 @@
 import { getCurriculums, type CurriculumId } from "../features/curriculum";
 import type { LearningCheckLevel, LearningCheckSubmission } from "../features/learning-check";
 import type { StudentRequestKind } from "../features/progress-orchestrator";
+import type { DemoStep } from "./demo-flow.types";
 
 const DEMO_STORAGE_KEY = "ai-homeroom-teacher.demo-state.v1";
 
@@ -16,10 +17,22 @@ const validStudentRequestKinds = new Set<StudentRequestKind>([
   "reduce_new_lecture",
 ]);
 
+const validDemoSteps = new Set<DemoStep>([
+  "intro",
+  "curriculum",
+  "today",
+  "request",
+  "reason",
+  "learning-check",
+  "next-session",
+  "curriculum-map",
+]);
+
 export type DemoStorageState = {
-  selectedCurriculumId: CurriculumId;
+  selectedCurriculumId: CurriculumId | null;
   studentRequestKind: StudentRequestKind;
   learningCheckSubmission: LearningCheckSubmission;
+  currentDemoStep: DemoStep;
 };
 
 export function readDemoStorageState(): Partial<DemoStorageState> | null {
@@ -48,7 +61,7 @@ export function saveDemoStorageState(state: DemoStorageState) {
   try {
     window.localStorage.setItem(DEMO_STORAGE_KEY, JSON.stringify(state));
   } catch {
-    // 데모 저장 실패는 핵심 수업 조율 흐름을 막지 않습니다.
+    // 데모 저장 실패가 핵심 수업 조율 흐름을 막지는 않습니다.
   }
 }
 
@@ -57,16 +70,23 @@ function normalizeDemoStorageState(value: unknown): Partial<DemoStorageState> | 
     return null;
   }
 
-  const selectedCurriculumId = normalizeCurriculumId(value.selectedCurriculumId);
+  const selectedCurriculumId =
+    value.selectedCurriculumId === null
+      ? null
+      : normalizeCurriculumId(value.selectedCurriculumId);
   const studentRequestKind = normalizeStudentRequestKind(value.studentRequestKind);
   const learningCheckSubmission = normalizeLearningCheckSubmission(
     value.learningCheckSubmission,
   );
+  const currentDemoStep = normalizeDemoStep(value.currentDemoStep);
 
   return {
-    ...(selectedCurriculumId ? { selectedCurriculumId } : {}),
+    ...(value.selectedCurriculumId === null || selectedCurriculumId
+      ? { selectedCurriculumId }
+      : {}),
     ...(studentRequestKind ? { studentRequestKind } : {}),
     ...(learningCheckSubmission ? { learningCheckSubmission } : {}),
+    ...(currentDemoStep ? { currentDemoStep } : {}),
   };
 }
 
@@ -86,6 +106,14 @@ function normalizeStudentRequestKind(value: unknown): StudentRequestKind | null 
   return validStudentRequestKinds.has(value as StudentRequestKind)
     ? (value as StudentRequestKind)
     : null;
+}
+
+function normalizeDemoStep(value: unknown): DemoStep | null {
+  if (typeof value !== "string") {
+    return null;
+  }
+
+  return validDemoSteps.has(value as DemoStep) ? (value as DemoStep) : null;
 }
 
 function normalizeLearningCheckSubmission(value: unknown): LearningCheckSubmission | null {
