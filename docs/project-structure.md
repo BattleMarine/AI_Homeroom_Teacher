@@ -100,7 +100,7 @@ AI_Homeroom_Teacher/
 | 파일 | 역할 |
 | --- | --- |
 | `main.tsx` | 앱 렌더링 진입점입니다. |
-| `App.tsx` | 스텝형 인터랙션 카드 흐름을 조립합니다. |
+| `App.tsx` | 채팅 앱 기반 데모 흐름과 AI 답변 첨부 카드를 조립합니다. |
 | `demo-flow.types.ts` | 데모 단계 타입을 정의합니다. |
 | `demo-storage.ts` | 데모용 localStorage 임시 저장과 복원을 담당합니다. |
 | `routes.tsx` | 화면 단위 라우팅이 필요할 때 사용합니다. 초기 데모에서는 생략할 수 있습니다. |

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   getCurriculumMap,
   getCurriculums,
@@ -344,10 +344,20 @@ export function App() {
     setSelectedCurriculumId(null);
     setStudentRequestKind("default");
     setLearningCheckSubmission(null);
+    setHomeUserMessage("");
+    setHomeDraftMessage("");
     setCurrentDemoStep("intro");
   }
 
   function handleSelectCurriculum(curriculumId: CurriculumId) {
+    const selectedCurriculum = curriculumOptions.find(
+      (curriculum) => curriculum.id === curriculumId,
+    );
+
+    if (selectedCurriculum) {
+      setHomeUserMessage(`${selectedCurriculum.title}으로 시작할게요.`);
+    }
+
     setSelectedCurriculumId(curriculumId);
     setStudentRequestKind("default");
     setLearningCheckSubmission(null);
@@ -355,6 +365,14 @@ export function App() {
   }
 
   function applyStudentRequest(requestKind: StudentRequestKind) {
+    const selectedRequest = studentRequestOptions.find(
+      (requestOption) => requestOption.kind === requestKind,
+    );
+
+    if (selectedRequest) {
+      setHomeUserMessage(selectedRequest.label);
+    }
+
     setStudentRequestKind(requestKind);
     setLearningCheckSubmission(null);
   }
@@ -479,6 +497,203 @@ export function App() {
         skippedItemIds,
       };
     });
+  }
+
+  function getSimulatedUserMessage() {
+    if (homeUserMessage) {
+      return homeUserMessage;
+    }
+
+    switch (currentDemoStep) {
+      case "curriculum":
+        return "커리큘럼을 추천해 주세요.";
+      case "today":
+        return hasSelectedCurriculum
+          ? "오늘 수업을 보여 주세요."
+          : "오늘 수업 예시를 먼저 보고 싶어요.";
+      case "request":
+        return "오늘 상황에 맞춰 수업을 조정해 주세요.";
+      case "reason":
+        return "왜 이렇게 배정됐나요?";
+      case "learning-check":
+        return "수업을 마쳤어요. 결과를 체크할게요.";
+      case "next-session":
+        return "다음 수업은 어떻게 바뀌나요?";
+      case "curriculum-map":
+        return "전체 커리큘럼을 보여 주세요.";
+      case "intro":
+      default:
+        return "";
+    }
+  }
+
+  function getAssistantMessage() {
+    switch (currentDemoStep) {
+      case "curriculum":
+        return "좋습니다. 먼저 학습 흐름을 정해 보겠습니다. 지금 데모에서는 자동 생성 대신 사전 정의된 커리큘럼 중에서 선택합니다.";
+      case "today":
+        return hasSelectedCurriculum
+          ? "선택한 커리큘럼을 기준으로 오늘 수업을 편성했습니다. 아래 카드에서 목표, 시간, 수업 순서를 확인해 주세요."
+          : "아직 커리큘럼을 확정하지 않았기 때문에 안정형 흐름을 기준으로 오늘 수업 예시를 보여드리겠습니다.";
+      case "request":
+        return "오늘 컨디션이나 남은 시간에 맞춰 수업량을 조정할 수 있습니다. 원하는 상황을 선택하면 오늘 수업 카드가 다시 계산됩니다.";
+      case "reason":
+        return "아래에 오늘 수업을 이렇게 배정한 근거를 정리했습니다. AI 담임은 규칙 기반 진도 운영 결과를 학생에게 설명하는 역할을 합니다.";
+      case "learning-check":
+        return "수업 후 체크를 입력해 주세요. 이해도, 집중도, 헷갈린 개념, 확인 문제 결과가 다음 수업 조율의 근거가 됩니다.";
+      case "next-session":
+        return "입력한 학습 결과를 기준으로 다음 수업을 다시 조율했습니다. 보강이 필요한 부분은 앞쪽에 배치했습니다.";
+      case "curriculum-map":
+        return "현재 커리큘럼에서 어디까지 왔는지, 어떤 개념에 보강이 필요한지 한 번에 볼 수 있습니다.";
+      case "intro":
+      default:
+        return hasSelectedCurriculum
+          ? "오늘 수업은 이렇게 진행하겠습니다. 아래 카드에 오늘 수업의 핵심 흐름을 담아 두었습니다."
+          : "안녕하세요. 아직 선택된 커리큘럼이 없습니다. 먼저 학습 흐름을 정하면, 그 기준으로 오늘 수업을 바로 편성하겠습니다.";
+    }
+  }
+
+  function getChatSuggestions() {
+    switch (currentDemoStep) {
+      case "curriculum":
+        return [
+          {
+            label: "안정형으로 시작",
+            message: "안정형 커리큘럼으로 시작할게요.",
+            action: () => handleSelectCurriculum("stable-log"),
+          },
+          {
+            label: "압축형으로 시작",
+            message: "압축형 커리큘럼으로 시작할게요.",
+            action: () => handleSelectCurriculum("compressed-log"),
+          },
+          {
+            label: "문제적용형으로 시작",
+            message: "문제적용형 커리큘럼으로 시작할게요.",
+            action: () => handleSelectCurriculum("practice-log"),
+          },
+        ];
+      case "today":
+        return [
+          {
+            label: "수업 완료하고 체크",
+            message: "수업을 완료하고 체크할게요.",
+            action: () => goToStep("learning-check"),
+          },
+          {
+            label: "오늘 시간이 부족해요",
+            message: "오늘 시간이 부족해요.",
+            action: handleShortTimeRequest,
+          },
+          {
+            label: "배정 이유 보기",
+            message: "왜 이렇게 배정됐나요?",
+            action: () => goToStep("reason"),
+          },
+        ];
+      case "request":
+        return [
+          {
+            label: "조정된 수업 보기",
+            message: "조정된 수업을 보여 주세요.",
+            action: () => goToStep("today"),
+          },
+          {
+            label: "조정 이유 보기",
+            message: "조정 이유를 알려 주세요.",
+            action: () => goToStep("reason"),
+          },
+        ];
+      case "reason":
+        return [
+          {
+            label: "오늘 수업으로 이동",
+            message: "오늘 수업으로 이동할게요.",
+            action: () => goToStep("today"),
+          },
+          {
+            label: "커리큘럼 맵 보기",
+            message: "전체 커리큘럼을 보여 주세요.",
+            action: () => goToStep("curriculum-map"),
+          },
+        ];
+      case "learning-check":
+        return [
+          {
+            label: "다음 수업 조율 보기",
+            message: "다음 수업 조율 결과를 보여 주세요.",
+            action: () => goToStep("next-session"),
+          },
+          {
+            label: "오늘 수업 다시 보기",
+            message: "오늘 수업을 다시 보여 주세요.",
+            action: () => goToStep("today"),
+          },
+        ];
+      case "next-session":
+        return [
+          {
+            label: "커리큘럼 맵 보기",
+            message: "커리큘럼 맵을 보여 주세요.",
+            action: () => goToStep("curriculum-map"),
+          },
+          {
+            label: "오늘 수업 다시 보기",
+            message: "오늘 수업을 다시 보여 주세요.",
+            action: () => goToStep("today"),
+          },
+        ];
+      case "curriculum-map":
+        return [
+          {
+            label: "오늘 수업으로 돌아가기",
+            message: "오늘 수업으로 돌아갈게요.",
+            action: () => goToStep("today"),
+          },
+          {
+            label: "커리큘럼 다시 고르기",
+            message: "커리큘럼을 다시 고르고 싶어요.",
+            action: () => goToStep("curriculum"),
+          },
+        ];
+      case "intro":
+      default:
+        return hasSelectedCurriculum
+          ? [
+              {
+                label: "오늘 수업 시작",
+                message: "오늘 수업 시작할게요.",
+                action: () => goToStep("today"),
+              },
+              {
+                label: "오늘 시간이 부족해요",
+                message: "오늘 시간이 부족해요.",
+                action: handleShortTimeRequest,
+              },
+              {
+                label: "왜 이렇게 배정됐나요?",
+                message: "왜 이렇게 배정됐나요?",
+                action: () => goToStep("reason"),
+              },
+              {
+                label: "전체 커리큘럼 보기",
+                message: "전체 커리큘럼을 보여 주세요.",
+                action: () => goToStep("curriculum-map"),
+              },
+            ]
+          : [
+              {
+                label: "커리큘럼 추천받기",
+                message: "커리큘럼을 추천해 주세요.",
+                action: () => goToStep("curriculum"),
+              },
+              {
+                label: "기초부터 안정적으로",
+                message: "기초부터 안정적으로 가고 싶어요.",
+                action: () => goToStep("curriculum"),
+              },
+            ];
+    }
   }
 
   function renderStepCard() {
@@ -834,161 +1049,51 @@ export function App() {
       case "intro":
       default:
         return (
-          <article className="flow-card flow-card-hero chat-flow-card">
+          <article className="flow-card chat-attachment-overview">
             <CardHeader eyebrow="AI 담임 홈" title="오늘 수업은 이렇게 진행하겠습니다" />
 
-            <section className="chat-home" aria-label="AI 담임 채팅">
-              <div className="chat-window">
-                <div className="chat-message-row chat-message-row-assistant">
-                  <div className="chat-avatar" aria-hidden="true">
-                    AI
+            {hasSelectedCurriculum ? (
+              <section className="session-overview" aria-label="오늘 수업 요약">
+                <div className="status-panel">
+                  <div className="status-label">현재 커리큘럼</div>
+                  <strong>{adjustedStudentState.selectedCurriculumTitle}</strong>
+                  <span>{adjustedStudentState.currentStepTitle} 진행 중</span>
+                  <div
+                    className="progress-track"
+                    aria-label={`진도율 ${progressPercent}%`}
+                  >
+                    <div style={{ width: `${progressPercent}%` }} />
                   </div>
-                  <div className="chat-bubble chat-bubble-assistant">
-                    {hasSelectedCurriculum ? (
-                      <>
-                        <p>
-                          좋아요. 오늘은 <strong>{demoTodaySession.goal}</strong>을
-                          중심으로 진행하겠습니다.
-                        </p>
-                        <p>
-                          예상 시간은 <strong>{demoTodaySession.estimatedMinutes}분</strong>
-                          입니다. 먼저{" "}
-                          <strong>{demoTodaySession.items[0]?.title ?? "핵심 보강"}</strong>
-                          으로 흔들리는 부분을 잡고, 이어서 확인 문제와 다음 개념으로
-                          넘어가겠습니다.
-                        </p>
-                        <p>{demoTodaySession.adjustmentReason}</p>
-                        <div className="chat-status-strip">
-                          <span>{adjustedStudentState.selectedCurriculumTitle}</span>
-                          <span>{adjustedStudentState.currentStepTitle} 진행 중</span>
-                          <span>{progressPercent}% 완료</span>
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        <p>
-                          아직 선택된 커리큘럼이 없습니다. 먼저 학습 흐름을 정하면, 그
-                          기준으로 오늘 수업을 바로 편성하겠습니다.
-                        </p>
-                        <p>
-                          안정형, 압축형, 문제적용형 중에서 지금 상태에 맞는 흐름을
-                          추천해 드릴게요.
-                        </p>
-                      </>
-                    )}
-                  </div>
+                  <span>
+                    {adjustedStudentState.completedStepCount}/
+                    {adjustedStudentState.totalStepCount}단계 완료
+                  </span>
                 </div>
 
-                {homeUserMessage ? (
-                  <div className="chat-message-row chat-message-row-user">
-                    <div className="chat-bubble chat-bubble-user">{homeUserMessage}</div>
-                  </div>
-                ) : null}
-              </div>
-
-              <form
-                className="chat-composer"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  handleHomeMessageSubmit(homeDraftMessage);
-                }}
-              >
-                <div className="chat-example-actions" aria-label="예시 답변">
-                  {hasSelectedCurriculum ? (
-                    <>
-                      <button
-                        type="button"
-                        className="chat-suggestion"
-                        onClick={() =>
-                          handleHomeQuickReply("오늘 수업 시작할게요.", () =>
-                            goToStep("today"),
-                          )
-                        }
-                      >
-                        오늘 수업 시작할게요
-                      </button>
-                      <button
-                        type="button"
-                        className="chat-suggestion"
-                        onClick={() =>
-                          handleHomeQuickReply("오늘 시간이 부족해요.", handleShortTimeRequest)
-                        }
-                      >
-                        오늘 시간이 부족해요
-                      </button>
-                      <button
-                        type="button"
-                        className="chat-suggestion"
-                        onClick={() =>
-                          handleHomeQuickReply("왜 이렇게 배정됐나요?", () =>
-                            goToStep("reason"),
-                          )
-                        }
-                      >
-                        왜 이렇게 배정됐나요?
-                      </button>
-                      <button
-                        type="button"
-                        className="chat-suggestion"
-                        onClick={() =>
-                          handleHomeQuickReply("전체 커리큘럼을 보여 주세요.", () =>
-                            goToStep("curriculum-map"),
-                          )
-                        }
-                      >
-                        전체 커리큘럼 보기
-                      </button>
-                    </>
-                  ) : (
-                    <>
-                      <button
-                        type="button"
-                        className="chat-suggestion"
-                        onClick={() =>
-                          handleHomeQuickReply("커리큘럼을 추천해 주세요.", () =>
-                            goToStep("curriculum"),
-                          )
-                        }
-                      >
-                        커리큘럼 추천받기
-                      </button>
-                      <button
-                        type="button"
-                        className="chat-suggestion"
-                        onClick={() =>
-                          handleHomeQuickReply("기초부터 안정적으로 가고 싶어요.", () =>
-                            goToStep("curriculum"),
-                          )
-                        }
-                      >
-                        기초부터 안정적으로 가고 싶어요
-                      </button>
-                    </>
-                  )}
+                <div className="preview-panel">
+                  <span className="eyebrow">오늘 목표</span>
+                  <h3>{demoTodaySession.goal}</h3>
+                  <p>{demoTodaySession.teacherComment}</p>
+                  <p>{demoTodaySession.adjustmentReason}</p>
                 </div>
-
-                <div className="chat-input-row">
-                  <input
-                    type="text"
-                    value={homeDraftMessage}
-                    onChange={(event) => setHomeDraftMessage(event.target.value)}
-                    placeholder={
-                      hasSelectedCurriculum
-                        ? "오늘 수업에 대해 답장해 주세요"
-                        : "어떤 학습 흐름이 좋을지 물어보세요"
-                    }
-                  />
-                  <button type="submit">전송</button>
-                </div>
-              </form>
-            </section>
+              </section>
+            ) : (
+              <section className="preview-panel">
+                <span className="eyebrow">AI 추천 예고</span>
+                <h3>먼저 커리큘럼을 추천하겠습니다</h3>
+                <p>
+                  초기 데모에서는 안정형, 압축형, 문제적용형 중 하나를 선택합니다.
+                  선택된 커리큘럼을 기준으로 오늘 수업 카드가 생성됩니다.
+                </p>
+              </section>
+            )}
           </article>
         );
     }
   }
 
   return (
-    <main className="app-shell">
+    <main className="app-shell chat-app-shell">
       <DevStepControl
         currentStep={currentDemoStep}
         onNext={goToNextStep}
@@ -997,9 +1102,70 @@ export function App() {
         onStepChange={goToStep}
       />
 
-      <section className="step-demo-shell" aria-label="AI 담임 스텝형 데모">
-        <StepProgress currentStep={currentDemoStep} />
-        {renderStepCard()}
+      <section className="chat-app" aria-label="AI 담임 채팅형 데모">
+        <header className="chat-app-header">
+          <div>
+            <span className="eyebrow">AI 담임 서비스 데모</span>
+            <h1>AI 담임과 오늘 수업 조율</h1>
+            <p>
+              AI 담임이 대화 안에서 필요한 카드들을 꺼내 보여주고, 학생의 답변에 따라
+              오늘 수업과 다음 수업을 조율합니다.
+            </p>
+          </div>
+        </header>
+
+        <div className="chat-thread" aria-live="polite">
+          <ChatMessage role="assistant">
+            <p>
+              안녕하세요. 저는 오늘 수업을 편성하고, 학생의 요구사항과 학습 결과에
+              맞춰 진도를 조율하는 AI 담임입니다.
+            </p>
+          </ChatMessage>
+
+          {getSimulatedUserMessage() ? (
+            <ChatMessage role="user">
+              <p>{getSimulatedUserMessage()}</p>
+            </ChatMessage>
+          ) : null}
+
+          <ChatMessage role="assistant">
+            <p>{getAssistantMessage()}</p>
+            <div className="chat-card-slot">{renderStepCard()}</div>
+          </ChatMessage>
+        </div>
+
+        <form
+          className="chat-app-composer"
+          onSubmit={(event) => {
+            event.preventDefault();
+            handleHomeMessageSubmit(homeDraftMessage);
+          }}
+        >
+          <div className="chat-example-actions" aria-label="예시 답변">
+            {getChatSuggestions().map((suggestion) => (
+              <button
+                type="button"
+                className="chat-suggestion"
+                key={suggestion.label}
+                onClick={() =>
+                  handleHomeQuickReply(suggestion.message, suggestion.action)
+                }
+              >
+                {suggestion.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="chat-input-row">
+            <input
+              type="text"
+              value={homeDraftMessage}
+              onChange={(event) => setHomeDraftMessage(event.target.value)}
+              placeholder="AI 담임에게 답장하거나 요청을 입력하세요"
+            />
+            <button type="submit">전송</button>
+          </div>
+        </form>
       </section>
     </main>
   );
@@ -1025,6 +1191,37 @@ function CardHeader({
       </div>
       {aside ? <strong>{aside}</strong> : null}
     </header>
+  );
+}
+
+function ChatMessage({
+  role,
+  children,
+}: {
+  role: "assistant" | "user";
+  children: ReactNode;
+}) {
+  const isAssistant = role === "assistant";
+
+  return (
+    <div
+      className={`chat-thread-row ${
+        isAssistant ? "chat-thread-row-assistant" : "chat-thread-row-user"
+      }`}
+    >
+      {isAssistant ? (
+        <div className="chat-avatar" aria-hidden="true">
+          AI
+        </div>
+      ) : null}
+      <div
+        className={`chat-thread-bubble ${
+          isAssistant ? "chat-thread-bubble-assistant" : "chat-thread-bubble-user"
+        }`}
+      >
+        {children}
+      </div>
+    </div>
   );
 }
 
@@ -1068,22 +1265,6 @@ function DevStepControl({
         </button>
       </div>
     </aside>
-  );
-}
-
-function StepProgress({ currentStep }: { currentStep: DemoStep }) {
-  return (
-    <nav className="step-progress" aria-label="데모 진행 단계">
-      {demoStepOptions.map((option) => (
-        <span
-          className={`step-pill ${option.step === currentStep ? "step-pill-current" : ""}`}
-          title={option.description}
-          key={option.step}
-        >
-          {option.label}
-        </span>
-      ))}
-    </nav>
   );
 }
 
