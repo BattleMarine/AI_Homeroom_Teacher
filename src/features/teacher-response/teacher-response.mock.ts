@@ -28,6 +28,42 @@ export function createMockAdjustmentReason({
   return `${currentStep.title} 단계의 기본 학습 흐름을 기준으로 오늘 수업을 편성했습니다.`;
 }
 
+export function createMockTodaySessionExplanationItems({
+  currentStep,
+  relatedWeakConcepts,
+  delayedItems,
+  maxMinutes,
+  reasonCodes,
+}: TodaySessionResponseContext): string[] {
+  const explanationItems = [
+    `${currentStep.title} 단계가 현재 커리큘럼의 진행 기준입니다.`,
+  ];
+
+  if (reasonCodes.includes("weak_concept_review")) {
+    explanationItems.push(
+      `${relatedWeakConcepts.join(", ")} 개념이 현재 단계와 연결되어 있어 새 진도 앞에 보강을 배치했습니다.`,
+    );
+  }
+
+  if (reasonCodes.includes("session_time_limit")) {
+    explanationItems.push(
+      `오늘 수업은 ${maxMinutes}분 안에 마치도록 선택 항목 ${delayedItems.length}개를 다음 후보로 넘겼습니다.`,
+    );
+  }
+
+  if (reasonCodes.includes("ready_for_next_step")) {
+    explanationItems.push(
+      "현재 단계의 기본 흐름이 안정적이라 새 진도와 확인 문제를 균형 있게 배치했습니다.",
+    );
+  }
+
+  explanationItems.push(
+    "수업 후 체크 결과에 따라 다음 수업 앞에 보강이나 복구 시간을 다시 붙이겠습니다.",
+  );
+
+  return explanationItems;
+}
+
 export function createMockTeacherComment({
   currentStep,
   relatedWeakConcepts,
@@ -41,10 +77,10 @@ export function createMockTeacherComment({
 
     return `오늘은 ${currentStep.title}을 진행하되, ${relatedWeakConcepts.join(
       ", ",
-    )}를 먼저 안정시키겠습니다.${delayedMessage} 모르는 부분은 벌이 아니라 보강으로 처리하면 됩니다.`;
+    )}를 먼저 안정시키겠습니다.${delayedMessage} 지금 늦어진 부분이 있어도 복구 가능한 범위에서 조정하겠습니다.`;
   }
 
-  return `오늘은 ${currentStep.title}의 기본 흐름대로 진행하겠습니다. 끝난 뒤 체크 결과를 보고 다음 수업 앞에 보강이 필요한지 다시 조율하겠습니다.`;
+  return `오늘은 ${currentStep.title}의 기본 흐름대로 진행하겠습니다. 끝난 뒤 체크 결과를 보고 다음 수업 앞에 필요한 보강을 다시 조율하겠습니다.`;
 }
 
 export function createMockNextSessionAdjustmentReason({
@@ -76,6 +112,59 @@ export function createMockNextSessionAdjustmentReason({
   }
 
   return `학습 후 체크 결과가 안정적이어서 다음 단계인 ${targetStep.title} 수업으로 이동하도록 조율했습니다.`;
+}
+
+export function createMockNextSessionExplanationItems({
+  targetStep,
+  reviewConcepts,
+  carryOverItems,
+  delayedItems,
+  maxMinutes,
+  reasonCodes,
+}: NextSessionResponseContext): string[] {
+  const explanationItems = [];
+
+  if (reasonCodes.includes("progress_delayed")) {
+    explanationItems.push(
+      `오늘 마치지 못한 필수 항목 ${carryOverItems.length}개를 다음 수업 앞에 먼저 배치했습니다.`,
+    );
+  }
+
+  if (reasonCodes.includes("review_inserted")) {
+    explanationItems.push(
+      `${reviewConcepts.join(", ")} 개념은 다음 진도 전에 짧게 보강합니다.`,
+    );
+  }
+
+  if (reasonCodes.includes("next_session_load_reduced")) {
+    explanationItems.push(
+      "집중도 흐름을 고려해 다음 수업의 전체 부담을 조금 낮췄습니다.",
+    );
+  }
+
+  if (reasonCodes.includes("session_time_limit")) {
+    explanationItems.push(
+      `${maxMinutes}분 안에 끝낼 수 있도록 선택 항목 ${delayedItems.length}개는 뒤로 넘겼습니다.`,
+    );
+  }
+
+  if (reasonCodes.includes("next_step_selected")) {
+    explanationItems.push(`${targetStep.title} 단계로 이어가도 되는 상태입니다.`);
+  }
+
+  if (reasonCodes.includes("curriculum_completed")) {
+    explanationItems.push("현재 커리큘럼의 마지막 단계라 마무리 점검 흐름을 유지합니다.");
+  }
+
+  if (explanationItems.length === 0) {
+    explanationItems.push(
+      `${targetStep.title} 단계의 핵심 흐름을 유지하면서 다음 수업을 편성했습니다.`,
+    );
+  }
+
+  explanationItems.push("다음 수업 후에도 체크 결과를 보고 보강 여부를 다시 판단합니다.");
+
+  return explanationItems;
 }
 
 export function createMockNextSessionTeacherComment({

@@ -61,6 +61,7 @@ export function generateTodaySession({
     estimatedMinutes: sumLessonMinutes(selectedItems),
     items: selectedItems,
     delayedItems,
+    explanationItems: teacherResponse.explanationItems,
     reasonCodes,
     adjustmentReason: teacherResponse.adjustmentReason,
     teacherComment: teacherResponse.teacherComment,

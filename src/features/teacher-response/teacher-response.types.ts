@@ -15,6 +15,7 @@ export type TodaySessionResponseContext = {
 
 export type TeacherResponseResult = {
   adjustmentReason: string;
+  explanationItems: string[];
   teacherComment: string;
 };
 

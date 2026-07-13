@@ -83,6 +83,7 @@ export function generateNextSession({
     reviewConcepts: learningAnalysis.reviewConcepts,
     carryOverItems,
     delayedItems,
+    explanationItems: teacherResponse.explanationItems,
     reasonCodes,
     adjustmentReason: teacherResponse.adjustmentReason,
     teacherComment: teacherResponse.teacherComment,

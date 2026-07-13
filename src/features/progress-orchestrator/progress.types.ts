@@ -33,8 +33,9 @@ export type GenerateTodaySessionInput = {
 
 export type GeneratedTodaySession = TodaySession & {
   date: string;
-  reasonCodes: OrchestrationReasonCode[];
   delayedItems: LessonItem[];
+  explanationItems: string[];
+  reasonCodes: OrchestrationReasonCode[];
 };
 
 export type GenerateNextSessionInput = {
@@ -50,8 +51,9 @@ export type GeneratedNextSession = TodaySession & {
   date: string;
   targetStepId: string;
   targetStepTitle: string;
-  reviewConcepts: string[];
   carryOverItems: LessonItem[];
   delayedItems: LessonItem[];
+  explanationItems: string[];
   reasonCodes: NextSessionReasonCode[];
+  reviewConcepts: string[];
 };

@@ -1,8 +1,10 @@
 import {
   createMockAdjustmentReason,
+  createMockNextSessionExplanationItems,
   createMockNextSessionAdjustmentReason,
   createMockNextSessionTeacherComment,
   createMockTeacherComment,
+  createMockTodaySessionExplanationItems,
 } from "./teacher-response.mock";
 import type {
   NextSessionResponseContext,
@@ -15,6 +17,7 @@ export function createTodaySessionResponse(
 ): TeacherResponseResult {
   return {
     adjustmentReason: createMockAdjustmentReason(context),
+    explanationItems: createMockTodaySessionExplanationItems(context),
     teacherComment: createMockTeacherComment(context),
   };
 }
@@ -24,6 +27,7 @@ export function createNextSessionResponse(
 ): TeacherResponseResult {
   return {
     adjustmentReason: createMockNextSessionAdjustmentReason(context),
+    explanationItems: createMockNextSessionExplanationItems(context),
     teacherComment: createMockNextSessionTeacherComment(context),
   };
 }

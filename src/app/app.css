@@ -257,6 +257,25 @@ p {
   font-weight: 700;
 }
 
+.explanation-list {
+  display: grid;
+  gap: 8px;
+  list-style: none;
+  margin: 16px 0 0;
+  padding: 0;
+}
+
+.explanation-list li {
+  background: #f6f8fc;
+  border: 1px solid #e1e8f3;
+  border-radius: 8px;
+  color: #485b78;
+  font-size: 0.92rem;
+  font-weight: 700;
+  line-height: 1.55;
+  padding: 10px 12px;
+}
+
 .check-form {
   border-bottom: 1px solid #e5ebf5;
   display: grid;

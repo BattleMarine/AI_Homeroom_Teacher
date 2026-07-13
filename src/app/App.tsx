@@ -399,6 +399,7 @@ export function App() {
             <span className="eyebrow">AI 담임 판단</span>
             <h2 id="reason-title">왜 이렇게 배정됐나요?</h2>
             <p>{demoTodaySession.adjustmentReason}</p>
+            <ExplanationList items={demoTodaySession.explanationItems} />
           </section>
 
           <section className="weak-concepts" aria-labelledby="weak-title">
@@ -558,6 +559,7 @@ export function App() {
 
           <p className="teacher-comment">{demoNextSession.teacherComment}</p>
           <p>{demoNextSession.adjustmentReason}</p>
+          <ExplanationList items={demoNextSession.explanationItems} />
 
           <div className="compact-lesson-list">
             {demoNextSession.items.map((item, index) => (
@@ -591,6 +593,16 @@ export function App() {
         </ol>
       </section>
     </main>
+  );
+}
+
+function ExplanationList({ items }: { items: string[] }) {
+  return (
+    <ul className="explanation-list">
+      {items.map((item) => (
+        <li key={item}>{item}</li>
+      ))}
+    </ul>
   );
 }
 

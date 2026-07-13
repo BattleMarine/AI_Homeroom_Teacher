@@ -433,6 +433,8 @@ AI 담임 홈 정적 화면
 취약 개념 보강 우선 배치 규칙
 수업 시간 제한에 따른 선택 항목 이동 규칙
 AI 담임 응답 mock 모듈
+AI 담임 판단 근거 목록 표시
+오늘 수업·다음 수업 조율 이유 코멘트 개선
 학습 후 체크 결과 분석 로직
 학습 결과 기반 다음 수업 조율 엔진
 커리큘럼 선택 상호작용
@@ -501,6 +503,18 @@ src/features/teacher-response/teacher-response.types.ts
 src/features/teacher-response/teacher-response.mock.ts
 src/features/teacher-response/teacher-response.service.ts
 ```
+
+현재 AI 담임 응답은 LLM API가 아니라 mock 응답 모듈에서 생성합니다.
+진도 운영 엔진과 학습 결과 분석 결과를 받아 다음 내용을 사용자에게 설명합니다.
+
+```text
+오늘 수업을 배정한 기준
+학생 요구사항이나 시간 제한 때문에 조정된 내용
+학습 후 체크 결과에 따라 다음 수업이 바뀐 이유
+보강·복구가 필요한 경우의 안내 문구
+```
+
+추후 LLM API를 연결할 때도 오늘 수업 생성, 보강 삽입, 다음 수업 조율 판단은 규칙 기반 엔진이 담당하고, LLM은 이 결과를 더 자연스럽게 설명하는 역할로 제한합니다.
 
 학습 후 체크 분석 기능은 다음 파일을 기준으로 구현합니다.
 
