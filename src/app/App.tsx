@@ -22,6 +22,7 @@ import {
   createDemoSessionData,
 } from "../mock/demo-session.data";
 import type { LessonItem, LessonItemKind } from "../types/shared.types";
+import { readDemoStorageState, saveDemoStorageState } from "./demo-storage";
 
 const kindLabels: Record<LessonItemKind, string> = {
   lecture: "강의",
@@ -72,14 +73,19 @@ const studentRequestOptions: Array<{
 ];
 
 export function App() {
+  const [initialDemoStorageState] = useState(() => readDemoStorageState());
   const [selectedCurriculumId, setSelectedCurriculumId] =
-    useState<CurriculumId>("stable-log");
+    useState<CurriculumId>(
+      () => initialDemoStorageState?.selectedCurriculumId ?? "stable-log",
+    );
   const [learningCheckSubmission, setLearningCheckSubmission] =
-    useState<LearningCheckSubmission>(
-      () => createDemoSessionData("stable-log").demoLearningCheckSubmission,
+    useState<LearningCheckSubmission | null>(
+      () => initialDemoStorageState?.learningCheckSubmission ?? null,
     );
   const [studentRequestKind, setStudentRequestKind] =
-    useState<StudentRequestKind>("default");
+    useState<StudentRequestKind>(
+      () => initialDemoStorageState?.studentRequestKind ?? "default",
+    );
   const { demoCurriculum, demoStudentState } = useMemo(
     () => createDemoSessionData(selectedCurriculumId),
     [selectedCurriculumId],
@@ -128,15 +134,26 @@ export function App() {
     [adjustedStudentState.weakConcepts, demoTodaySession],
   );
   useEffect(() => {
-    setLearningCheckSubmission(defaultLearningCheckSubmission);
-  }, [defaultLearningCheckSubmission]);
+    if (learningCheckSubmission === null) {
+      setLearningCheckSubmission(defaultLearningCheckSubmission);
+    }
+  }, [defaultLearningCheckSubmission, learningCheckSubmission]);
+  const activeLearningCheckSubmission =
+    learningCheckSubmission ?? defaultLearningCheckSubmission;
+  useEffect(() => {
+    saveDemoStorageState({
+      selectedCurriculumId,
+      studentRequestKind,
+      learningCheckSubmission: activeLearningCheckSubmission,
+    });
+  }, [activeLearningCheckSubmission, selectedCurriculumId, studentRequestKind]);
   const demoLearningCheckAnalysis = useMemo(
     () =>
       analyzeLearningCheck({
-        submission: learningCheckSubmission,
+        submission: activeLearningCheckSubmission,
         todaySession: demoTodaySession,
       }),
-    [learningCheckSubmission, demoTodaySession],
+    [activeLearningCheckSubmission, demoTodaySession],
   );
   const demoNextSession = useMemo(
     () =>
@@ -169,6 +186,12 @@ export function App() {
   function handleSelectCurriculum(curriculumId: CurriculumId) {
     setSelectedCurriculumId(curriculumId);
     setStudentRequestKind("default");
+    setLearningCheckSubmission(null);
+  }
+
+  function handleSelectStudentRequest(requestKind: StudentRequestKind) {
+    setStudentRequestKind(requestKind);
+    setLearningCheckSubmission(null);
   }
 
   function updateLearningLevel(
@@ -176,7 +199,7 @@ export function App() {
     value: string,
   ) {
     setLearningCheckSubmission((currentSubmission) => ({
-      ...currentSubmission,
+      ...(currentSubmission ?? activeLearningCheckSubmission),
       [field]: Number(value) as LearningCheckLevel,
     }));
   }
@@ -186,13 +209,13 @@ export function App() {
     const safeValue = Number.isFinite(parsedValue) ? parsedValue : 0;
     const nextCorrectCount = Math.min(
       Math.max(safeValue, 0),
-      learningCheckSubmission.problemResult.totalCount,
+      activeLearningCheckSubmission.problemResult.totalCount,
     );
 
     setLearningCheckSubmission((currentSubmission) => ({
-      ...currentSubmission,
+      ...(currentSubmission ?? activeLearningCheckSubmission),
       problemResult: {
-        ...currentSubmission.problemResult,
+        ...(currentSubmission ?? activeLearningCheckSubmission).problemResult,
         correctCount: nextCorrectCount,
       },
     }));
@@ -204,10 +227,11 @@ export function App() {
     const nextTotalCount = Math.max(safeValue, 0);
 
     setLearningCheckSubmission((currentSubmission) => ({
-      ...currentSubmission,
+      ...(currentSubmission ?? activeLearningCheckSubmission),
       problemResult: {
         correctCount: Math.min(
-          currentSubmission.problemResult.correctCount,
+          (currentSubmission ?? activeLearningCheckSubmission).problemResult
+            .correctCount,
           nextTotalCount,
         ),
         totalCount: nextTotalCount,
@@ -217,13 +241,14 @@ export function App() {
 
   function toggleConfusedConcept(concept: string) {
     setLearningCheckSubmission((currentSubmission) => {
-      const hasConcept = currentSubmission.confusedConcepts.includes(concept);
+      const baseSubmission = currentSubmission ?? activeLearningCheckSubmission;
+      const hasConcept = baseSubmission.confusedConcepts.includes(concept);
       const confusedConcepts = hasConcept
-        ? currentSubmission.confusedConcepts.filter((item) => item !== concept)
-        : [...currentSubmission.confusedConcepts, concept];
+        ? baseSubmission.confusedConcepts.filter((item) => item !== concept)
+        : [...baseSubmission.confusedConcepts, concept];
 
       return {
-        ...currentSubmission,
+        ...baseSubmission,
         confusedConcepts,
       };
     });
@@ -231,15 +256,16 @@ export function App() {
 
   function toggleCompletedItem(itemId: string) {
     setLearningCheckSubmission((currentSubmission) => {
-      const completedItemIds = currentSubmission.completedItemIds.includes(itemId)
-        ? currentSubmission.completedItemIds.filter((id) => id !== itemId)
-        : [...currentSubmission.completedItemIds, itemId];
+      const baseSubmission = currentSubmission ?? activeLearningCheckSubmission;
+      const completedItemIds = baseSubmission.completedItemIds.includes(itemId)
+        ? baseSubmission.completedItemIds.filter((id) => id !== itemId)
+        : [...baseSubmission.completedItemIds, itemId];
       const skippedItemIds = demoTodaySession.items
         .filter((item) => !completedItemIds.includes(item.id))
         .map((item) => item.id);
 
       return {
-        ...currentSubmission,
+        ...baseSubmission,
         completedItemIds,
         skippedItemIds,
       };
@@ -259,7 +285,7 @@ export function App() {
               <button
                 type="button"
                 className="secondary-button"
-                onClick={() => setStudentRequestKind("short_time")}
+                onClick={() => handleSelectStudentRequest("short_time")}
               >
                 오늘 시간이 부족해요
               </button>
@@ -320,7 +346,7 @@ export function App() {
                 studentRequestKind === requestOption.kind ? "request-card-selected" : ""
               }`}
               key={requestOption.kind}
-              onClick={() => setStudentRequestKind(requestOption.kind)}
+              onClick={() => handleSelectStudentRequest(requestOption.kind)}
             >
               <strong>{requestOption.label}</strong>
               <span>{requestOption.description}</span>
@@ -404,12 +430,12 @@ export function App() {
                   type="range"
                   min="1"
                   max="5"
-                  value={learningCheckSubmission.understandingLevel}
+                  value={activeLearningCheckSubmission.understandingLevel}
                   onChange={(event) =>
                     updateLearningLevel("understandingLevel", event.target.value)
                   }
                 />
-                <strong>{learningCheckSubmission.understandingLevel}/5</strong>
+                <strong>{activeLearningCheckSubmission.understandingLevel}/5</strong>
               </div>
             </label>
 
@@ -420,12 +446,12 @@ export function App() {
                   type="range"
                   min="1"
                   max="5"
-                  value={learningCheckSubmission.focusLevel}
+                  value={activeLearningCheckSubmission.focusLevel}
                   onChange={(event) =>
                     updateLearningLevel("focusLevel", event.target.value)
                   }
                 />
-                <strong>{learningCheckSubmission.focusLevel}/5</strong>
+                <strong>{activeLearningCheckSubmission.focusLevel}/5</strong>
               </div>
             </label>
 
@@ -436,8 +462,8 @@ export function App() {
                   <input
                     type="number"
                     min="0"
-                    max={learningCheckSubmission.problemResult.totalCount}
-                    value={learningCheckSubmission.problemResult.correctCount}
+                    max={activeLearningCheckSubmission.problemResult.totalCount}
+                    value={activeLearningCheckSubmission.problemResult.correctCount}
                     onChange={(event) => updateProblemCorrectCount(event.target.value)}
                   />
                   <span>정답 수</span>
@@ -446,7 +472,7 @@ export function App() {
                   <input
                     type="number"
                     min="0"
-                    value={learningCheckSubmission.problemResult.totalCount}
+                    value={activeLearningCheckSubmission.problemResult.totalCount}
                     onChange={(event) => updateProblemTotalCount(event.target.value)}
                   />
                   <span>전체 문항</span>
@@ -461,7 +487,7 @@ export function App() {
                   <label className="check-chip" key={concept}>
                     <input
                       type="checkbox"
-                      checked={learningCheckSubmission.confusedConcepts.includes(concept)}
+                      checked={activeLearningCheckSubmission.confusedConcepts.includes(concept)}
                       onChange={() => toggleConfusedConcept(concept)}
                     />
                     <span>{concept}</span>
@@ -477,7 +503,7 @@ export function App() {
                   <label key={item.id}>
                     <input
                       type="checkbox"
-                      checked={learningCheckSubmission.completedItemIds.includes(item.id)}
+                      checked={activeLearningCheckSubmission.completedItemIds.includes(item.id)}
                       onChange={() => toggleCompletedItem(item.id)}
                     />
                     <span>{item.title}</span>
@@ -490,17 +516,17 @@ export function App() {
           <dl className="summary-list">
             <div>
               <dt>이해도</dt>
-              <dd>{learningCheckSubmission.understandingLevel}/5</dd>
+              <dd>{activeLearningCheckSubmission.understandingLevel}/5</dd>
             </div>
             <div>
               <dt>집중도</dt>
-              <dd>{learningCheckSubmission.focusLevel}/5</dd>
+              <dd>{activeLearningCheckSubmission.focusLevel}/5</dd>
             </div>
             <div>
               <dt>확인 문제</dt>
               <dd>
-                {learningCheckSubmission.problemResult.correctCount}/
-                {learningCheckSubmission.problemResult.totalCount}개 정답
+                {activeLearningCheckSubmission.problemResult.correctCount}/
+                {activeLearningCheckSubmission.problemResult.totalCount}개 정답
                 {problemAccuracyPercent !== null ? ` · ${problemAccuracyPercent}%` : ""}
               </dd>
             </div>
