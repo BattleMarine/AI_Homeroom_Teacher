@@ -19,6 +19,7 @@ AI 담임이 사전 정의된 커리큘럼을 기반으로 오늘 수업을 편�
 | [screen-spec.md](./screen-spec.md) | 정적 화면 구현 전 화면별 표시 항목, 사용자 행동, 완료 기준을 정의합니다. |
 | [domain-model.md](./domain-model.md) | 커리큘럼, 학생 상태, 오늘 수업, 학습 후 체크 등 핵심 데이터 개념을 정리합니다. |
 | [orchestration-rules.md](./orchestration-rules.md) | 규칙 기반 오늘 수업 생성, 요구사항 반영, 다음 수업 조율 기준을 정의합니다. |
+| [curriculum-adjustment-design.md](./curriculum-adjustment-design.md) | AI 담임이 내부 조율 도구로 복합 요청을 반영하고, 편성안을 먼저 제안하는 방향을 정의합니다. |
 | [implementation-roadmap.md](./implementation-roadmap.md) | 구현 순서와 각 단계에서 만들 파일 범위를 정리합니다. |
 | [repository-management.md](./repository-management.md) | GitHub 관리 시 제외해야 할 민감 정보, 로그, 임시 산출물 기준을 정리합니다. |
 
@@ -44,6 +45,8 @@ localStorage 기반 데모 상태 저장 완료
 채팅 앱 기반 인터랙션 플로우 UI 구현 완료
 개발용 단계 강제 이동 컨트롤 구현 완료
 AI 담임 답변 안에 카드가 첨부되는 UI 구현 완료
+채팅 흐름에 맞춘 컴팩트 첨부 카드 UI 구현 완료
+채팅 메시지 누적 및 AI 준비 중 점 애니메이션 구현 완료
 LLM API 연결 미구현
 ```
 

@@ -29,6 +29,7 @@ AI_Homeroom_Teacher/
     project-structure.md
     demo-flow.md
     domain-model.md
+    curriculum-adjustment-design.md
     implementation-roadmap.md
   public/
   src/
