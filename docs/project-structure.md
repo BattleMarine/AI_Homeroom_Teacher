@@ -24,6 +24,14 @@
 AI_Homeroom_Teacher/
   README.md
   AGENTS.md
+  apps/
+    api/
+      src/
+        app.ts
+        config.ts
+        server.ts
+        mock/
+          teacher.mock.ts
   docs/
     README.md
     project-structure.md
@@ -31,6 +39,12 @@ AI_Homeroom_Teacher/
     domain-model.md
     curriculum-adjustment-design.md
     implementation-roadmap.md
+    backend-api-foundation.md
+    backend-development-brief.md
+    claims/
+      lesson-feedback-proxy-issue.md
+    prompts/
+      backend-development-session.md
   public/
   src/
     app/
@@ -91,6 +105,7 @@ AI_Homeroom_Teacher/
 | `docs/` | 구현 전 설계 문서와 이후 개발 참고 문서를 관리합니다. |
 | `public/` | 정적 이미지, 아이콘, 데모용 공개 자산을 둡니다. |
 | `src/` | 실제 애플리케이션 코드를 둡니다. |
+| `apps/api/` | 프론트엔드와 분리된 HTTP API 서버를 둡니다. 초기에는 mock 데이터를 반환하고, 이후 인증·DB·LLM 오케스트레이터를 추가합니다. |
 
 ## `src/app`
 

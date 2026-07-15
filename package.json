@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:api": "pnpm --filter @ai-homeroom/api dev",
     "build": "tsc -b && vite build",
+    "build:api": "pnpm --filter @ai-homeroom/api build",
     "preview": "vite preview"
   },
   "dependencies": {

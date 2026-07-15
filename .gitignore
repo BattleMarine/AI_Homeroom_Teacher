@@ -32,7 +32,8 @@ credentials.md
 *.private.md
 *.local.md
 docs/private/
-docs/secrets/
+# 로컬 도메인·포트·외부 API 기록
+/docs/secrets/
 private/
 secrets/
 
