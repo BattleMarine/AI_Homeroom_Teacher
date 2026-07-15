@@ -2,6 +2,15 @@ import type { TodaySession } from "../../types/shared.types";
 
 export type LearningCheckLevel = 1 | 2 | 3 | 4 | 5;
 
+export type LessonFeedback = {
+  lessonItemId: string;
+  lessonTitle: string;
+  conceptTags: string[];
+  understandingLevel: LearningCheckLevel;
+  focusLevel: LearningCheckLevel;
+  completedAt: string;
+};
+
 export type ProblemResult = {
   correctCount: number;
   totalCount: number;

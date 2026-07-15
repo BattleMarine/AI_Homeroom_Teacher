@@ -17,7 +17,7 @@ AI 담임이 사전 정의된 커리큘럼을 기반으로 오늘 수업을 편�
 | [project-structure.md](./project-structure.md) | 전체 폴더/파일 트리와 각 폴더의 책임을 정의합니다. |
 | [demo-flow.md](./demo-flow.md) | 데모에서 보여줄 화면 흐름과 사용자 행동 흐름을 정리합니다. |
 | [screen-spec.md](./screen-spec.md) | 정적 화면 구현 전 화면별 표시 항목, 사용자 행동, 완료 기준을 정의합니다. |
-| [domain-model.md](./domain-model.md) | 커리큘럼, 학생 상태, 오늘 수업, 학습 후 체크 등 핵심 데이터 개념을 정리합니다. |
+| [domain-model.md](./domain-model.md) | 커리큘럼, 학생 상태, 오늘 수업, 강의별 학습 기록 등 핵심 데이터 개념을 정리합니다. |
 | [orchestration-rules.md](./orchestration-rules.md) | 규칙 기반 오늘 수업 생성, 요구사항 반영, 다음 수업 조율 기준을 정의합니다. |
 | [curriculum-adjustment-design.md](./curriculum-adjustment-design.md) | AI 담임이 내부 조율 도구로 복합 요청을 반영하고, 편성안을 먼저 제안하는 방향을 정의합니다. |
 | [implementation-roadmap.md](./implementation-roadmap.md) | 구현 순서와 각 단계에서 만들 파일 범위를 정리합니다. |
@@ -37,8 +37,8 @@ AI 담임이 사전 정의된 커리큘럼을 기반으로 오늘 수업을 편�
 정적 화면 구현 완료
 mock data 연결 완료
 오늘 수업 생성 로직 구현 완료
-학습 후 체크 반영 완료
-다음 수업 조율 구현 완료
+강의별 간단 체크 반영 완료
+내부 다음 수업 조율 및 읽기 전용 진행 보고 구현 완료
 학생 요구사항 반영 구현 완료
 AI 담임 mock 코멘트 개선 완료
 localStorage 기반 데모 상태 저장 완료

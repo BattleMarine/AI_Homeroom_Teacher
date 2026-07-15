@@ -1,5 +1,9 @@
 import { getCurriculums, type CurriculumId } from "../features/curriculum";
-import type { LearningCheckLevel, LearningCheckSubmission } from "../features/learning-check";
+import type {
+  LearningCheckLevel,
+  LearningCheckSubmission,
+  LessonFeedback,
+} from "../features/learning-check";
 import type { StudentRequestKind } from "../features/progress-orchestrator";
 import type { DemoStep } from "./demo-flow.types";
 
@@ -32,6 +36,7 @@ export type DemoStorageState = {
   selectedCurriculumId: CurriculumId | null;
   studentRequestKind: StudentRequestKind;
   learningCheckSubmission: LearningCheckSubmission;
+  lessonFeedbacks: LessonFeedback[];
   currentDemoStep: DemoStep;
 };
 
@@ -78,6 +83,7 @@ function normalizeDemoStorageState(value: unknown): Partial<DemoStorageState> | 
   const learningCheckSubmission = normalizeLearningCheckSubmission(
     value.learningCheckSubmission,
   );
+  const lessonFeedbacks = normalizeLessonFeedbacks(value.lessonFeedbacks);
   const currentDemoStep = normalizeDemoStep(value.currentDemoStep);
 
   return {
@@ -86,6 +92,7 @@ function normalizeDemoStorageState(value: unknown): Partial<DemoStorageState> | 
       : {}),
     ...(studentRequestKind ? { studentRequestKind } : {}),
     ...(learningCheckSubmission ? { learningCheckSubmission } : {}),
+    lessonFeedbacks,
     ...(currentDemoStep ? { currentDemoStep } : {}),
   };
 }
@@ -156,6 +163,44 @@ function normalizeLearningLevel(value: unknown): LearningCheckLevel | null {
   return typeof value === "number" && [1, 2, 3, 4, 5].includes(value)
     ? (value as LearningCheckLevel)
     : null;
+}
+
+function normalizeLessonFeedbacks(value: unknown): LessonFeedback[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  const feedbackByLessonId = new Map<string, LessonFeedback>();
+
+  value.forEach((item) => {
+    if (!isRecord(item)) {
+      return;
+    }
+
+    const understandingLevel = normalizeLearningLevel(item.understandingLevel);
+    const focusLevel = normalizeLearningLevel(item.focusLevel);
+
+    if (
+      typeof item.lessonItemId !== "string" ||
+      typeof item.lessonTitle !== "string" ||
+      typeof item.completedAt !== "string" ||
+      !understandingLevel ||
+      !focusLevel
+    ) {
+      return;
+    }
+
+    feedbackByLessonId.set(item.lessonItemId, {
+      lessonItemId: item.lessonItemId,
+      lessonTitle: item.lessonTitle,
+      conceptTags: normalizeStringArray(item.conceptTags),
+      understandingLevel,
+      focusLevel,
+      completedAt: item.completedAt,
+    });
+  });
+
+  return [...feedbackByLessonId.values()];
 }
 
 function normalizeNumber(value: unknown): number | null {

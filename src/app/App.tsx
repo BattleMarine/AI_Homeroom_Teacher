@@ -8,6 +8,7 @@ import {
 } from "../features/curriculum";
 import {
   analyzeLearningCheck,
+  type LessonFeedback,
   type LearningCheckLevel,
   type LearningCheckSubmission,
   type LearningRecommendation,
@@ -18,10 +19,7 @@ import {
   generateTodaySession,
   type StudentRequestKind,
 } from "../features/progress-orchestrator";
-import {
-  createDemoLearningCheckSubmission,
-  createDemoSessionData,
-} from "../mock/demo-session.data";
+import { createDemoSessionData } from "../mock/demo-session.data";
 import type { LessonItem, LessonItemKind } from "../types/shared.types";
 import type { DemoStep } from "./demo-flow.types";
 import { readDemoStorageState, saveDemoStorageState } from "./demo-storage";
@@ -82,13 +80,13 @@ const demoStepOptions: Array<{
   },
   {
     step: "learning-check",
-    label: "학습 후 체크",
-    description: "오늘 결과 입력",
+    label: "강의별 학습 기록 도구",
+    description: "강의 종료 직후 응답을 내부 기록",
   },
   {
     step: "next-session",
-    label: "다음 수업 조율",
-    description: "학습 결과 기반 다음 수업",
+    label: "다음 수업 조율 도구",
+    description: "누적 응답 기반 다음 수업을 내부 계산",
   },
   {
     step: "curriculum-map",
@@ -100,12 +98,28 @@ const demoStepOptions: Array<{
 const stepOrder = demoStepOptions.map((option) => option.step);
 const aiResponseDelayMs = 500;
 
-type ChatAttachment = DemoStep | "today-summary";
+type ChatAttachment = DemoStep | "today-summary" | "progress-report";
 
 type TodaySessionSummary = {
   goal: string;
   estimatedMinutes: number;
   items: LessonItem[];
+};
+
+type LearningProgressReport = {
+  completedLessonTitle: string;
+  completedLectureCount: number;
+  totalLectureCount: number;
+  recommendedNextLessonTitle?: string;
+  understandingLevel: LearningCheckLevel;
+  focusLevel: LearningCheckLevel;
+  teacherNote: string;
+};
+
+type NextLessonCountdown = {
+  messageId: string;
+  lesson: LessonItem;
+  remainingSeconds: number;
 };
 
 type ChatTranscriptMessage = {
@@ -114,6 +128,8 @@ type ChatTranscriptMessage = {
   text: string;
   attachmentStep?: ChatAttachment;
   todaySessionSummary?: TodaySessionSummary;
+  learningProgressReport?: LearningProgressReport;
+  isNextLessonCountdownNotice?: boolean;
 };
 
 const studentRequestOptions: Array<{
@@ -212,6 +228,59 @@ const focusLevelOptions: Array<{
   },
 ];
 
+const immediateUnderstandingOptions: Array<{
+  level: LearningCheckLevel;
+  label: string;
+}> = [
+  { level: 1, label: "이해가 어려웠어요" },
+  { level: 3, label: "대체로 이해했어요" },
+  { level: 5, label: "잘 이해했어요" },
+];
+
+const immediateFocusOptions: Array<{
+  level: LearningCheckLevel;
+  label: string;
+}> = [
+  { level: 1, label: "집중이 어려웠어요" },
+  { level: 3, label: "보통이었어요" },
+  { level: 5, label: "집중했어요" },
+];
+
+function createFeedbackBasedLearningCheckSubmission(
+  todaySession: { date: string; items: LessonItem[] },
+  lessonFeedbacks: LessonFeedback[],
+): LearningCheckSubmission {
+  const relevantFeedbacks = lessonFeedbacks.filter((feedback) =>
+    todaySession.items.some((item) => item.id === feedback.lessonItemId),
+  );
+  const averageLevel = (
+    field: "understandingLevel" | "focusLevel",
+  ): LearningCheckLevel => {
+    if (relevantFeedbacks.length === 0) {
+      return 3;
+    }
+
+    const total = relevantFeedbacks.reduce((sum, feedback) => sum + feedback[field], 0);
+    return Math.min(5, Math.max(1, Math.round(total / relevantFeedbacks.length))) as LearningCheckLevel;
+  };
+  const algorithmDetectedConcepts = relevantFeedbacks
+    .filter((feedback) => feedback.understandingLevel <= 2)
+    .flatMap((feedback) => feedback.conceptTags);
+
+  return {
+    sessionDate: todaySession.date,
+    completedItemIds: todaySession.items.map((item) => item.id),
+    skippedItemIds: [],
+    understandingLevel: averageLevel("understandingLevel"),
+    focusLevel: averageLevel("focusLevel"),
+    confusedConcepts: [...new Set(algorithmDetectedConcepts)],
+    problemResult: {
+      correctCount: 0,
+      totalCount: 0,
+    },
+  };
+}
+
 export function App() {
   const [initialDemoStorageState] = useState(() => readDemoStorageState());
   const [selectedCurriculumId, setSelectedCurriculumId] =
@@ -231,8 +300,18 @@ export function App() {
   );
   const [homeDraftMessage, setHomeDraftMessage] = useState("");
   const [isAssistantPreparing, setIsAssistantPreparing] = useState(false);
+  const [activeLesson, setActiveLesson] = useState<LessonItem | null>(null);
+  const [isMockLessonPlaying, setIsMockLessonPlaying] = useState(false);
+  const [lessonFeedbacks, setLessonFeedbacks] = useState<LessonFeedback[]>(
+    () => initialDemoStorageState?.lessonFeedbacks ?? [],
+  );
   const chatMessageIdRef = useRef(0);
   const conversationThreadRef = useRef<HTMLDivElement | null>(null);
+  const nextLessonCountdownIntervalRef = useRef<number | null>(null);
+  const nextLessonCountdownTimeoutRef = useRef<number | null>(null);
+  const [nextLessonCountdown, setNextLessonCountdown] = useState<NextLessonCountdown | null>(
+    null,
+  );
   const [chatMessages, setChatMessages] = useState<ChatTranscriptMessage[]>(() => [
     {
       id: "assistant-welcome",
@@ -247,11 +326,9 @@ export function App() {
         initialDemoStorageState?.selectedCurriculumId === undefined
           ? "아직 선택된 커리큘럼이 없습니다. 먼저 학습 흐름을 정하면, 그 기준으로 오늘 수업을 바로 편성하겠습니다."
           : "선택한 커리큘럼을 기준으로 오늘 수업을 편성할 준비가 되었습니다. 현재 상황이나 원하는 학습 방식을 말해 주세요.",
-      attachmentStep:
-        initialDemoStorageState?.currentDemoStep === "today" ||
-        initialDemoStorageState?.currentDemoStep === "request"
-          ? "today-summary"
-          : (initialDemoStorageState?.currentDemoStep ?? "intro"),
+      attachmentStep: getVisibleAttachmentStep(
+        initialDemoStorageState?.currentDemoStep ?? "intro",
+      ),
     },
   ]);
 
@@ -298,11 +375,11 @@ export function App() {
   );
   const defaultLearningCheckSubmission = useMemo(
     () =>
-      createDemoLearningCheckSubmission(
+      createFeedbackBasedLearningCheckSubmission(
         demoTodaySession,
-        adjustedStudentState.weakConcepts.slice(0, 1),
+        lessonFeedbacks,
       ),
-    [adjustedStudentState.weakConcepts, demoTodaySession],
+    [demoTodaySession, lessonFeedbacks],
   );
 
   useEffect(() => {
@@ -319,11 +396,13 @@ export function App() {
       selectedCurriculumId,
       studentRequestKind,
       learningCheckSubmission: activeLearningCheckSubmission,
+      lessonFeedbacks,
       currentDemoStep,
     });
   }, [
     activeLearningCheckSubmission,
     currentDemoStep,
+    lessonFeedbacks,
     selectedCurriculumId,
     studentRequestKind,
   ]);
@@ -340,6 +419,13 @@ export function App() {
       behavior: "smooth",
     });
   }, [chatMessages, isAssistantPreparing]);
+
+  useEffect(
+    () => () => {
+      clearNextLessonCountdownTimers();
+    },
+    [],
+  );
 
   const demoLearningCheckAnalysis = useMemo(
     () =>
@@ -386,8 +472,16 @@ export function App() {
     return `${prefix}-${Date.now()}-${chatMessageIdRef.current}`;
   }
 
-  function getVisibleAttachmentStep(step: DemoStep): ChatAttachment | undefined {
-    return step === "today" || step === "request" ? "today-summary" : step;
+  function getVisibleAttachmentStep(step: ChatAttachment): ChatAttachment {
+    if (step === "today" || step === "request") {
+      return "today-summary";
+    }
+
+    if (step === "learning-check" || step === "next-session") {
+      return "progress-report";
+    }
+
+    return step;
   }
 
   function createTodaySessionSummary(
@@ -403,10 +497,58 @@ export function App() {
     };
   }
 
+  function createLearningProgressReport(
+    feedbacks: LessonFeedback[] = lessonFeedbacks,
+  ): LearningProgressReport {
+    const latestFeedback = feedbacks[feedbacks.length - 1];
+    const lectureItemIds = new Set(
+      demoTodaySession.items
+        .filter((item) => item.kind === "lecture")
+        .map((item) => item.id),
+    );
+    const completedLectureCount = feedbacks.filter((feedback) =>
+      lectureItemIds.has(feedback.lessonItemId),
+    ).length;
+    const understandingLevel = latestFeedback?.understandingLevel ?? 3;
+    const focusLevel = latestFeedback?.focusLevel ?? 3;
+    const recommendedNextLesson = getRecommendedNextLesson(feedbacks);
+    const teacherNote =
+      understandingLevel <= 2
+        ? "이 강의의 핵심 개념을 다음 수업 전에 짧게 다시 확인하도록 내부 반영했습니다."
+        : focusLevel <= 2
+          ? "다음 수업의 분량을 가볍게 조율하도록 내부 반영했습니다."
+          : "현재 응답을 바탕으로 다음 수업의 흐름을 내부적으로 조율합니다.";
+
+    return {
+      completedLessonTitle: latestFeedback?.lessonTitle ?? "아직 완료한 강의가 없습니다.",
+      completedLectureCount,
+      totalLectureCount: lectureItemIds.size,
+      recommendedNextLessonTitle: recommendedNextLesson?.title,
+      understandingLevel,
+      focusLevel,
+      teacherNote,
+    };
+  }
+
+  function getRecommendedNextLesson(
+    feedbacks: LessonFeedback[] = lessonFeedbacks,
+  ): LessonItem | null {
+    const completedLessonIds = new Set(
+      feedbacks.map((feedback) => feedback.lessonItemId),
+    );
+
+    return (
+      demoTodaySession.items.find(
+        (item) => item.kind === "lecture" && !completedLessonIds.has(item.id),
+      ) ?? null
+    );
+  }
+
   function appendAssistantMessage(
     step: DemoStep,
     text?: string,
     todaySessionSummary?: TodaySessionSummary,
+    learningProgressReport?: LearningProgressReport,
   ) {
     const attachmentStep = getVisibleAttachmentStep(step);
 
@@ -420,6 +562,10 @@ export function App() {
         todaySessionSummary:
           attachmentStep === "today-summary"
             ? (todaySessionSummary ?? createTodaySessionSummary(demoTodaySession))
+            : undefined,
+        learningProgressReport:
+          attachmentStep === "progress-report"
+            ? (learningProgressReport ?? createLearningProgressReport())
             : undefined,
       },
     ]);
@@ -441,12 +587,14 @@ export function App() {
     assistantText,
     action,
     todaySessionSummary,
+    learningProgressReport,
   }: {
     message: string;
     nextStep: DemoStep;
     assistantText?: string;
     action?: () => void;
     todaySessionSummary?: TodaySessionSummary;
+    learningProgressReport?: LearningProgressReport;
   }) {
     const trimmedMessage = message.trim();
 
@@ -466,7 +614,6 @@ export function App() {
     setIsAssistantPreparing(true);
 
     window.setTimeout(() => {
-      action?.();
       setCurrentDemoStep(nextStep);
       const attachmentStep = getVisibleAttachmentStep(nextStep);
       setChatMessages((currentMessages) => [
@@ -480,10 +627,89 @@ export function App() {
             attachmentStep === "today-summary"
               ? (todaySessionSummary ?? createTodaySessionSummary(demoTodaySession))
               : undefined,
+          learningProgressReport:
+            attachmentStep === "progress-report"
+              ? (learningProgressReport ?? createLearningProgressReport())
+              : undefined,
         },
       ]);
       setIsAssistantPreparing(false);
+      action?.();
     }, aiResponseDelayMs);
+  }
+
+  function clearNextLessonCountdownTimers() {
+    if (nextLessonCountdownIntervalRef.current !== null) {
+      window.clearInterval(nextLessonCountdownIntervalRef.current);
+      nextLessonCountdownIntervalRef.current = null;
+    }
+
+    if (nextLessonCountdownTimeoutRef.current !== null) {
+      window.clearTimeout(nextLessonCountdownTimeoutRef.current);
+      nextLessonCountdownTimeoutRef.current = null;
+    }
+  }
+
+  function updateNextLessonCountdownMessage(messageId: string, text: string) {
+    setChatMessages((currentMessages) =>
+      currentMessages.map((message) =>
+        message.id === messageId
+          ? { ...message, text, isNextLessonCountdownNotice: false }
+          : message,
+      ),
+    );
+  }
+
+  function cancelNextLessonCountdown() {
+    if (nextLessonCountdown === null) {
+      return;
+    }
+
+    clearNextLessonCountdownTimers();
+    updateNextLessonCountdownMessage(
+      nextLessonCountdown.messageId,
+      `'${nextLessonCountdown.lesson.title}' 자동 재생을 취소했습니다. 준비되면 오늘의 학습 안내에서 직접 열 수 있어요.`,
+    );
+    setNextLessonCountdown(null);
+  }
+
+  function beginNextLessonCountdown(nextLesson: LessonItem) {
+    clearNextLessonCountdownTimers();
+    const messageId = createChatMessageId("assistant-countdown");
+
+    setNextLessonCountdown({
+      messageId,
+      lesson: nextLesson,
+      remainingSeconds: 5,
+    });
+    setChatMessages((currentMessages) => [
+      ...currentMessages,
+      {
+        id: messageId,
+        role: "assistant",
+        text: `'${nextLesson.title}' 강의를 5초 뒤에 재생합니다.`,
+        isNextLessonCountdownNotice: true,
+      },
+    ]);
+    nextLessonCountdownIntervalRef.current = window.setInterval(() => {
+      setNextLessonCountdown((currentCountdown) =>
+        currentCountdown?.messageId === messageId
+          ? {
+              ...currentCountdown,
+              remainingSeconds: Math.max(0, currentCountdown.remainingSeconds - 1),
+            }
+          : currentCountdown,
+      );
+    }, 1000);
+    nextLessonCountdownTimeoutRef.current = window.setTimeout(() => {
+      clearNextLessonCountdownTimers();
+      updateNextLessonCountdownMessage(
+        messageId,
+        `'${nextLesson.title}' 강의를 이어서 시작합니다.`,
+      );
+      setNextLessonCountdown(null);
+      openMockLesson(nextLesson);
+    }, 5000);
   }
 
   function goToPreviousStep() {
@@ -507,11 +733,14 @@ export function App() {
   }
 
   function resetDemoFlow() {
+    clearNextLessonCountdownTimers();
     setSelectedCurriculumId(null);
     setStudentRequestKind("default");
     setLearningCheckSubmission(null);
+    setLessonFeedbacks([]);
     setHomeDraftMessage("");
     setIsAssistantPreparing(false);
+    setNextLessonCountdown(null);
     setChatMessages([
       {
         id: createChatMessageId("assistant"),
@@ -532,6 +761,7 @@ export function App() {
     setSelectedCurriculumId(curriculumId);
     setStudentRequestKind("default");
     setLearningCheckSubmission(null);
+    setLessonFeedbacks([]);
     setCurrentDemoStep("today");
   }
 
@@ -596,6 +826,61 @@ export function App() {
 
   function handleShortTimeRequest() {
     handleStudentRequestFromChat("short_time");
+  }
+
+  function openMockLesson(item: LessonItem) {
+    setActiveLesson({
+      ...item,
+      conceptTags: [...item.conceptTags],
+    });
+    setIsMockLessonPlaying(false);
+
+    if (typeof window !== "undefined") {
+      window.history.pushState(null, "", `#lesson-${item.id}`);
+    }
+  }
+
+  function closeMockLesson() {
+    setActiveLesson(null);
+    setIsMockLessonPlaying(false);
+
+    if (typeof window !== "undefined" && window.location.hash.startsWith("#lesson-")) {
+      window.history.replaceState(null, "", window.location.pathname + window.location.search);
+    }
+  }
+
+  function completeMockLesson(feedback: LessonFeedback) {
+    const nextFeedbacks = [
+      ...lessonFeedbacks.filter((item) => item.lessonItemId !== feedback.lessonItemId),
+      feedback,
+    ];
+
+    setLessonFeedbacks(nextFeedbacks);
+    setLearningCheckSubmission(
+      createFeedbackBasedLearningCheckSubmission(demoTodaySession, nextFeedbacks),
+    );
+    const nextLesson = getRecommendedNextLesson(nextFeedbacks);
+    closeMockLesson();
+    sendUserMessageAndPrepareResponse({
+      message: `${feedback.lessonTitle} 학습을 마쳤어요. 이해도와 집중도를 전달할게요.`,
+      nextStep: "next-session",
+      assistantText:
+        nextLesson === null
+          ? "오늘 편성된 강의를 모두 마쳤어요. 강의별 응답을 반영했고, 다음 수업 조율은 AI 담임이 내부에서 계속 관리하겠습니다."
+          : `강의별 응답을 반영했습니다. 다음으로 '${nextLesson.title}'을 추천할게요. 재생 전 잠깐만 준비할 시간을 드리겠습니다.`,
+      action: nextLesson === null ? undefined : () => beginNextLessonCountdown(nextLesson),
+      learningProgressReport: createLearningProgressReport(nextFeedbacks),
+    });
+  }
+
+  function startRecommendedLesson(nextLesson: LessonItem) {
+    sendUserMessageAndPrepareResponse({
+      message: `${nextLesson.title}을 이어서 볼게요.`,
+      nextStep: "today",
+      assistantText:
+        "좋아요. 지금까지의 학습 흐름을 이어서 다음 강의를 열겠습니다. 강의가 끝난 뒤에도 짧게만 체크해 주세요.",
+      action: () => openMockLesson(nextLesson),
+    });
   }
 
   function handleHomeQuickReply(
@@ -785,9 +1070,9 @@ export function App() {
       case "reason":
         return "아래에 오늘 수업을 이렇게 배정한 근거를 정리했습니다. AI 담임은 규칙 기반 진도 운영 결과를 학생에게 설명하는 역할을 합니다.";
       case "learning-check":
-        return "수업 후 체크를 입력해 주세요. 이해도, 집중도, 헷갈린 개념, 확인 문제 결과가 다음 수업 조율의 근거가 됩니다.";
+        return "강의가 끝날 때마다 이해도와 집중도만 짧게 기록합니다. 세부 설문 대신 강의별 응답과 개념 태그를 AI 담임이 내부적으로 다음 수업 조율에 반영합니다.";
       case "next-session":
-        return "입력한 학습 결과를 기준으로 다음 수업을 다시 조율했습니다. 보강이 필요한 부분은 앞쪽에 배치했습니다.";
+        return "강의별 응답을 기준으로 다음 수업 조율을 내부 반영했습니다. 사용자에게는 오늘의 학습 진행 상황만 간단히 보고합니다.";
       case "curriculum-map":
         return "현재 커리큘럼에서 어디까지 왔는지, 어떤 개념에 보강이 필요한지 한 번에 볼 수 있습니다.";
       case "intro":
@@ -823,7 +1108,13 @@ export function App() {
           {
             label: "이 편성으로 진행",
             message: "이 편성으로 진행할게요.",
-            action: () => handleHomeQuickReply("이 편성으로 진행할게요.", "learning-check"),
+            action: () =>
+              handleHomeQuickReply(
+                "이 편성으로 진행할게요.",
+                "today",
+                undefined,
+                "좋습니다. 오늘의 학습 안내에서 강의 항목을 열어 시작할 수 있어요.",
+              ),
           },
           {
             label: "오늘 시간이 부족해요",
@@ -841,7 +1132,13 @@ export function App() {
           {
             label: "이 편성으로 진행",
             message: "이 편성으로 진행할게요.",
-            action: () => handleHomeQuickReply("이 편성으로 진행할게요.", "learning-check"),
+            action: () =>
+              handleHomeQuickReply(
+                "이 편성으로 진행할게요.",
+                "today",
+                undefined,
+                "좋습니다. 오늘의 학습 안내에서 강의 항목을 열어 시작할 수 있어요.",
+              ),
           },
           {
             label: "복습을 더 늘려주세요",
@@ -859,7 +1156,13 @@ export function App() {
           {
             label: "이 편성으로 진행",
             message: "이 편성으로 진행할게요.",
-            action: () => handleHomeQuickReply("이 편성으로 진행할게요.", "learning-check"),
+            action: () =>
+              handleHomeQuickReply(
+                "이 편성으로 진행할게요.",
+                "today",
+                undefined,
+                "좋습니다. 오늘의 학습 안내에서 강의 항목을 열어 시작할 수 있어요.",
+              ),
           },
           {
             label: "커리큘럼 맵 보기",
@@ -870,30 +1173,45 @@ export function App() {
       case "learning-check":
         return [
           {
-            label: "다음 수업 조율 보기",
-            message: "다음 수업 조율 결과를 보여 주세요.",
-            action: () =>
-              handleHomeQuickReply("다음 수업 조율 결과를 보여 주세요.", "next-session"),
+            label: "오늘 학습 안내 보기",
+            message: "오늘 학습 안내를 다시 보여 주세요.",
+            action: () => handleHomeQuickReply("오늘 학습 안내를 다시 보여 주세요.", "today"),
           },
-          {
-            label: "수업 편성 다시 듣기",
-            message: "현재 수업 편성을 다시 설명해 주세요.",
-            action: () => handleHomeQuickReply("현재 수업 편성을 다시 설명해 주세요.", "today"),
-          },
-        ];
-      case "next-session":
-        return [
           {
             label: "커리큘럼 맵 보기",
             message: "커리큘럼 맵을 보여 주세요.",
             action: () => handleHomeQuickReply("커리큘럼 맵을 보여 주세요.", "curriculum-map"),
           },
+        ];
+      case "next-session": {
+        const nextLesson = getRecommendedNextLesson();
+
+        return [
+          ...(nextLesson === null
+            ? []
+            : [
+                {
+                  label: `다음 강의: ${nextLesson.title}`,
+                  message: `${nextLesson.title}을 이어서 볼게요.`,
+                  action: () => startRecommendedLesson(nextLesson),
+                },
+              ]),
           {
-            label: "수업 편성 다시 듣기",
-            message: "현재 수업 편성을 다시 설명해 주세요.",
-            action: () => handleHomeQuickReply("현재 수업 편성을 다시 설명해 주세요.", "today"),
+            label: "이해가 잘 안 된 부분이 있어요",
+            message: "방금 강의에서 이해가 잘 안 된 부분이 있어요.",
+            action: () =>
+              sendStudentRequestProposal(
+                "방금 강의에서 이해가 잘 안 된 부분이 있어요.",
+                "confused_concept",
+              ),
+          },
+          {
+            label: "오늘 학습 안내 보기",
+            message: "오늘 학습 안내를 다시 보여 주세요.",
+            action: () => handleHomeQuickReply("오늘 학습 안내를 다시 보여 주세요.", "today"),
           },
         ];
+      }
       case "curriculum-map":
         return [
           {
@@ -962,8 +1280,55 @@ export function App() {
   function renderChatAttachment(
     step: ChatAttachment,
     todaySessionSummary?: TodaySessionSummary,
+    learningProgressReport?: LearningProgressReport,
   ) {
-    switch (step) {
+    const visibleAttachmentStep = getVisibleAttachmentStep(step);
+
+    switch (visibleAttachmentStep) {
+      case "progress-report": {
+        const report = learningProgressReport ?? createLearningProgressReport();
+
+        return (
+          <article
+            className="chat-attachment readonly-progress-report"
+            aria-label="오늘의 학습 진행 보고"
+          >
+            <AttachmentHeader
+              eyebrow="오늘의 학습 진행"
+              title="강의별 응답을 반영했습니다"
+              description="다음 수업 조율은 AI 담임이 내부에서 계속 관리합니다."
+              aside={`${report.completedLectureCount}/${report.totalLectureCount} 강의`}
+            />
+
+            <dl className="progress-report-list">
+              <div>
+                <dt>완료한 강의</dt>
+                <dd>{report.completedLessonTitle}</dd>
+              </div>
+              {report.recommendedNextLessonTitle ? (
+                <div>
+                  <dt>다음 추천 강의</dt>
+                  <dd>{report.recommendedNextLessonTitle}</dd>
+                </div>
+              ) : null}
+              <div>
+                <dt>이해도</dt>
+                <dd>{getLearningLevelLabel(understandingLevelOptions, report.understandingLevel)}</dd>
+              </div>
+              <div>
+                <dt>집중도</dt>
+                <dd>{getLearningLevelLabel(focusLevelOptions, report.focusLevel)}</dd>
+              </div>
+            </dl>
+
+            <p className="attachment-note">{report.teacherNote}</p>
+            <p className="readonly-progress-report-hint">
+              특히 부족했던 부분이 있다면 아래 채팅으로 편하게 알려 주세요.
+            </p>
+          </article>
+        );
+      }
+
       case "today-summary": {
         const session =
           todaySessionSummary ?? createTodaySessionSummary(demoTodaySession);
@@ -981,20 +1346,42 @@ export function App() {
             />
 
             <ol className="readonly-learning-plan-list">
-              {session.items.map((item, index) => (
-                <li key={item.id}>
-                  <span className="readonly-learning-plan-index">{index + 1}</span>
-                  <div>
-                    <div className="readonly-learning-plan-meta">
-                      <span>{kindLabels[item.kind]}</span>
-                      <span>{item.required ? "필수" : "선택"}</span>
+              {session.items.map((item, index) => {
+                const isCompletedLecture =
+                  item.kind === "lecture" &&
+                  lessonFeedbacks.some((feedback) => feedback.lessonItemId === item.id);
+
+                return (
+                  <li key={item.id}>
+                    <span className="readonly-learning-plan-index">{index + 1}</span>
+                    <div>
+                      <div className="readonly-learning-plan-meta">
+                        <span>{kindLabels[item.kind]}</span>
+                        <span>
+                          {isCompletedLecture ? "완료" : item.required ? "필수" : "선택"}
+                        </span>
+                      </div>
+                      {item.kind === "lecture" ? (
+                        <a
+                          className="readonly-learning-plan-link"
+                          href={`#lesson-${item.id}`}
+                          onClick={(event) => {
+                            event.preventDefault();
+                            openMockLesson(item);
+                          }}
+                        >
+                          <strong>{item.title}</strong>
+                          <span>{isCompletedLecture ? "강의 다시 보기" : "강의 열기"}</span>
+                        </a>
+                      ) : (
+                        <strong>{item.title}</strong>
+                      )}
+                      <p>{item.description}</p>
                     </div>
-                    <strong>{item.title}</strong>
-                    <p>{item.description}</p>
-                  </div>
-                  <em>{item.estimatedMinutes}분</em>
-                </li>
-              ))}
+                    <em>{item.estimatedMinutes}분</em>
+                  </li>
+                );
+              })}
             </ol>
 
             <p className="attachment-note">
@@ -1439,6 +1826,18 @@ export function App() {
     }
   }
 
+  if (activeLesson) {
+    return (
+      <MockLessonPage
+        lesson={activeLesson}
+        isPlaying={isMockLessonPlaying}
+        onClose={closeMockLesson}
+        onComplete={completeMockLesson}
+        onTogglePlay={() => setIsMockLessonPlaying((isPlaying) => !isPlaying)}
+      />
+    );
+  }
+
   return (
     <main className="chat-page">
       <DevStepControl
@@ -1479,11 +1878,21 @@ export function App() {
           {chatMessages.map((message) => (
             <ChatMessage role={message.role} key={message.id}>
               <p>{message.text}</p>
+              {message.isNextLessonCountdownNotice &&
+              nextLessonCountdown?.messageId === message.id ? (
+                <div className="next-lesson-countdown" aria-live="polite">
+                  <strong>{nextLessonCountdown.remainingSeconds}초 뒤 자동 재생</strong>
+                  <button type="button" onClick={cancelNextLessonCountdown}>
+                    자동 재생 취소
+                  </button>
+                </div>
+              ) : null}
               {message.attachmentStep ? (
                 <div className="attachment-slot">
                   {renderChatAttachment(
                     message.attachmentStep,
                     message.todaySessionSummary,
+                    message.learningProgressReport,
                   )}
                 </div>
               ) : null}
@@ -1511,7 +1920,7 @@ export function App() {
                 className="quick-reply"
                 key={suggestion.label}
                 onClick={suggestion.action}
-                disabled={isAssistantPreparing}
+                disabled={isAssistantPreparing || nextLessonCountdown !== null}
               >
                 {suggestion.label}
               </button>
@@ -1524,15 +1933,215 @@ export function App() {
               value={homeDraftMessage}
               onChange={(event) => setHomeDraftMessage(event.target.value)}
               placeholder="AI 담임에게 답장하거나 요청을 입력하세요"
-              disabled={isAssistantPreparing}
+              disabled={isAssistantPreparing || nextLessonCountdown !== null}
             />
-            <button type="submit" disabled={isAssistantPreparing}>
+            <button
+              type="submit"
+              disabled={isAssistantPreparing || nextLessonCountdown !== null}
+            >
               전송
             </button>
           </div>
         </form>
       </section>
     </main>
+  );
+}
+
+function MockLessonPage({
+  lesson,
+  isPlaying,
+  onClose,
+  onComplete,
+  onTogglePlay,
+}: {
+  lesson: LessonItem;
+  isPlaying: boolean;
+  onClose: () => void;
+  onComplete: (feedback: LessonFeedback) => void;
+  onTogglePlay: () => void;
+}) {
+  const [isFeedbackOpen, setIsFeedbackOpen] = useState(false);
+  const [understandingLevel, setUnderstandingLevel] = useState<LearningCheckLevel>(3);
+  const [focusLevel, setFocusLevel] = useState<LearningCheckLevel>(3);
+
+  return (
+    <main className="lesson-page">
+      <section className="lesson-shell" aria-label="더미 강의 세션">
+        <header className="lesson-header">
+          <div>
+            <span className="eyebrow">AI 담임 서비스 데모 · 강의 세션</span>
+            <h1>{lesson.title}</h1>
+            <p>AI 담임과의 대화 흐름은 유지한 채, 오늘 편성된 강의를 학습합니다.</p>
+          </div>
+          <button type="button" className="ghost-button" onClick={onClose}>
+            AI 담임에게 돌아가기
+          </button>
+        </header>
+
+        <div className="lesson-content">
+          <section className="mock-video-panel" aria-label="더미 강의 영상">
+            <div className="mock-video-frame">
+              <img
+                src="/images/mock-logarithm-lecture.png"
+                alt="로그함수 그래프와 점근선을 설명하는 강의 장면"
+              />
+              <div className="mock-video-lesson-label">
+                <span>현재 강의</span>
+                <strong>{lesson.title}</strong>
+              </div>
+              <button
+                type="button"
+                className={`mock-video-toggle ${isPlaying ? "mock-video-toggle-playing" : ""}`}
+                onClick={onTogglePlay}
+                aria-pressed={isPlaying}
+              >
+                {isPlaying ? "일시정지" : "강의 재생"}
+              </button>
+              {isPlaying ? (
+                <div className="mock-video-status" aria-live="polite">
+                  <span>강의 시연 중</span>
+                  <strong>{lesson.conceptTags.join(" · ")}를 설명하고 있습니다.</strong>
+                </div>
+              ) : null}
+            </div>
+            <div className="mock-video-controls" aria-label="더미 영상 진행 상태">
+              <span>04:10</span>
+              <div aria-hidden="true">
+                <i />
+              </div>
+              <span>{lesson.estimatedMinutes}:00</span>
+            </div>
+          </section>
+
+          <aside className="lesson-sidebar">
+            <section className="lesson-info-panel">
+              <span className="eyebrow">오늘의 학습</span>
+              <h2>{lesson.title}</h2>
+              <p>{lesson.description}</p>
+              <dl className="lesson-meta-list">
+                <div>
+                  <dt>예상 시간</dt>
+                  <dd>{lesson.estimatedMinutes}분</dd>
+                </div>
+                <div>
+                  <dt>학습 개념</dt>
+                  <dd>{lesson.conceptTags.join(" · ")}</dd>
+                </div>
+              </dl>
+            </section>
+
+            <section className="lesson-info-panel lesson-next-panel">
+              <span className="eyebrow">AI 담임 안내</span>
+              <h2>강의가 끝나면 두 가지만 짧게 남겨요</h2>
+              <p>
+                이해도와 집중도만 알려 주시면, AI 담임이 강의의 개념 태그와 함께 다음 수업 조율에
+                내부 반영합니다.
+              </p>
+            </section>
+
+            {isFeedbackOpen ? null : (
+              <button type="button" onClick={() => setIsFeedbackOpen(true)}>
+                강의 종료하고 간단히 기록하기
+              </button>
+            )}
+          </aside>
+        </div>
+      </section>
+
+      {isFeedbackOpen ? (
+        <div
+          className="feedback-modal-backdrop"
+          role="presentation"
+          onMouseDown={() => setIsFeedbackOpen(false)}
+        >
+          <section
+            className="immediate-feedback-panel feedback-modal"
+            aria-label="강의 직후 간단 체크"
+            aria-modal="true"
+            role="dialog"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <header className="feedback-modal-header">
+              <div>
+                <span className="eyebrow">강의 직후 간단 체크</span>
+                <h2>지금 강의는 어땠나요?</h2>
+              </div>
+              <button
+                type="button"
+                className="ghost-button"
+                onClick={() => setIsFeedbackOpen(false)}
+              >
+                계속 학습하기
+              </button>
+            </header>
+            <p>두 가지만 알려 주시면 AI 담임이 다음 수업에 반영합니다.</p>
+            <ImmediateFeedbackGroup
+              label="이해도"
+              options={immediateUnderstandingOptions}
+              selectedLevel={understandingLevel}
+              onSelect={setUnderstandingLevel}
+            />
+            <ImmediateFeedbackGroup
+              label="집중도"
+              options={immediateFocusOptions}
+              selectedLevel={focusLevel}
+              onSelect={setFocusLevel}
+            />
+            <button
+              type="button"
+              onClick={() =>
+                onComplete({
+                  lessonItemId: lesson.id,
+                  lessonTitle: lesson.title,
+                  conceptTags: [...lesson.conceptTags],
+                  understandingLevel,
+                  focusLevel,
+                  completedAt: new Date().toISOString(),
+                })
+              }
+            >
+              AI 담임에게 전달하기
+            </button>
+          </section>
+        </div>
+      ) : null}
+    </main>
+  );
+}
+
+function ImmediateFeedbackGroup({
+  label,
+  options,
+  selectedLevel,
+  onSelect,
+}: {
+  label: string;
+  options: Array<{ level: LearningCheckLevel; label: string }>;
+  selectedLevel: LearningCheckLevel;
+  onSelect: (level: LearningCheckLevel) => void;
+}) {
+  return (
+    <div className="immediate-feedback-group">
+      <span>{label}</span>
+      <div>
+        {options.map((option) => (
+          <label
+            className={`immediate-feedback-option ${
+              selectedLevel === option.level ? "feedback-option-selected" : ""
+            }`}
+            key={option.level}
+          >
+            <input
+              type="checkbox"
+              checked={selectedLevel === option.level}
+              onChange={() => onSelect(option.level)}
+            />
+            <span>{option.label}</span>
+          </label>
+        ))}
+      </div>
+    </div>
   );
 }
 
