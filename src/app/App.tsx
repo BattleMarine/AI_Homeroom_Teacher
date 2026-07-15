@@ -7,15 +7,12 @@ import {
   type CurriculumProgressStatus,
 } from "../features/curriculum";
 import {
-  analyzeLearningCheck,
   type LessonFeedback,
   type LearningCheckLevel,
   type LearningCheckSubmission,
-  type LearningRecommendation,
 } from "../features/learning-check";
 import {
   applyStudentRequestToProgress,
-  generateNextSession,
   generateTodaySession,
   type StudentRequestKind,
 } from "../features/progress-orchestrator";
@@ -29,13 +26,6 @@ const kindLabels: Record<LessonItemKind, string> = {
   review: "보강",
   practice: "연습",
   check: "확인",
-};
-
-const recommendationLabels: Record<LearningRecommendation, string> = {
-  insert_review: "보강 삽입",
-  delay_progress: "진도 연기",
-  reduce_next_session_load: "수업량 축소",
-  keep_pace: "진도 유지",
 };
 
 const curriculumStatusClassNames: Record<CurriculumProgressStatus, string> = {
@@ -110,6 +100,7 @@ type LearningProgressReport = {
   completedLessonTitle: string;
   completedLectureCount: number;
   totalLectureCount: number;
+  recommendedNextLessonId?: string;
   recommendedNextLessonTitle?: string;
   understandingLevel: LearningCheckLevel;
   focusLevel: LearningCheckLevel;
@@ -266,11 +257,21 @@ function createFeedbackBasedLearningCheckSubmission(
   const algorithmDetectedConcepts = relevantFeedbacks
     .filter((feedback) => feedback.understandingLevel <= 2)
     .flatMap((feedback) => feedback.conceptTags);
+  const completedLectureIds = new Set(
+    relevantFeedbacks.map((feedback) => feedback.lessonItemId),
+  );
+  const completedItemIds = todaySession.items
+    .filter(
+      (item) => item.kind !== "lecture" || completedLectureIds.has(item.id),
+    )
+    .map((item) => item.id);
 
   return {
     sessionDate: todaySession.date,
-    completedItemIds: todaySession.items.map((item) => item.id),
-    skippedItemIds: [],
+    completedItemIds,
+    skippedItemIds: todaySession.items
+      .filter((item) => !completedItemIds.includes(item.id))
+      .map((item) => item.id),
     understandingLevel: averageLevel("understandingLevel"),
     focusLevel: averageLevel("focusLevel"),
     confusedConcepts: [...new Set(algorithmDetectedConcepts)],
@@ -427,46 +428,10 @@ export function App() {
     [],
   );
 
-  const demoLearningCheckAnalysis = useMemo(
-    () =>
-      analyzeLearningCheck({
-        submission: activeLearningCheckSubmission,
-        todaySession: demoTodaySession,
-      }),
-    [activeLearningCheckSubmission, demoTodaySession],
-  );
-  const demoNextSession = useMemo(
-    () =>
-      generateNextSession({
-        studentState: adjustedStudentState,
-        todaySession: demoTodaySession,
-        learningAnalysis: demoLearningCheckAnalysis,
-      }),
-    [adjustedStudentState, demoLearningCheckAnalysis, demoTodaySession],
-  );
-  const conceptOptions = useMemo(
-    () =>
-      [
-        ...new Set([
-          ...adjustedStudentState.weakConcepts,
-          ...demoTodaySession.items.flatMap((item) => item.conceptTags),
-        ]),
-      ],
-    [adjustedStudentState.weakConcepts, demoTodaySession.items],
-  );
   const progressPercent = Math.round(
     (adjustedStudentState.completedStepCount / adjustedStudentState.totalStepCount) *
       100,
   );
-  const problemAccuracyPercent =
-    demoLearningCheckAnalysis.problemAccuracy === null
-      ? null
-      : Math.round(demoLearningCheckAnalysis.problemAccuracy * 100);
-
-  function goToStep(step: DemoStep) {
-    setCurrentDemoStep(step);
-  }
-
   function createChatMessageId(prefix: string) {
     chatMessageIdRef.current += 1;
     return `${prefix}-${Date.now()}-${chatMessageIdRef.current}`;
@@ -523,6 +488,7 @@ export function App() {
       completedLessonTitle: latestFeedback?.lessonTitle ?? "아직 완료한 강의가 없습니다.",
       completedLectureCount,
       totalLectureCount: lectureItemIds.size,
+      recommendedNextLessonId: recommendedNextLesson?.id,
       recommendedNextLessonTitle: recommendedNextLesson?.title,
       understandingLevel,
       focusLevel,
@@ -671,6 +637,34 @@ export function App() {
       `'${nextLessonCountdown.lesson.title}' 자동 재생을 취소했습니다. 준비되면 오늘의 학습 안내에서 직접 열 수 있어요.`,
     );
     setNextLessonCountdown(null);
+  }
+
+  function playNextLessonNow() {
+    if (nextLessonCountdown === null) {
+      return;
+    }
+
+    clearNextLessonCountdownTimers();
+    updateNextLessonCountdownMessage(
+      nextLessonCountdown.messageId,
+      `'${nextLessonCountdown.lesson.title}' 강의를 바로 재생합니다.`,
+    );
+    const lesson = nextLessonCountdown.lesson;
+    setNextLessonCountdown(null);
+    openMockLesson(lesson);
+  }
+
+  function playLessonFromProgressReport(lesson: LessonItem) {
+    if (nextLessonCountdown !== null) {
+      clearNextLessonCountdownTimers();
+      updateNextLessonCountdownMessage(
+        nextLessonCountdown.messageId,
+        `'${nextLessonCountdown.lesson.title}' 자동 재생을 멈추고 선택한 강의를 재생합니다.`,
+      );
+      setNextLessonCountdown(null);
+    }
+
+    openMockLesson(lesson);
   }
 
   function beginNextLessonCountdown(nextLesson: LessonItem) {
@@ -942,84 +936,6 @@ export function App() {
     });
   }
 
-  function updateLearningLevel(
-    field: "understandingLevel" | "focusLevel",
-    value: LearningCheckLevel,
-  ) {
-    setLearningCheckSubmission((currentSubmission) => ({
-      ...(currentSubmission ?? activeLearningCheckSubmission),
-      [field]: value,
-    }));
-  }
-
-  function updateProblemCorrectCount(value: string) {
-    const parsedValue = Number(value);
-    const safeValue = Number.isFinite(parsedValue) ? parsedValue : 0;
-    const nextCorrectCount = Math.min(
-      Math.max(safeValue, 0),
-      activeLearningCheckSubmission.problemResult.totalCount,
-    );
-
-    setLearningCheckSubmission((currentSubmission) => ({
-      ...(currentSubmission ?? activeLearningCheckSubmission),
-      problemResult: {
-        ...(currentSubmission ?? activeLearningCheckSubmission).problemResult,
-        correctCount: nextCorrectCount,
-      },
-    }));
-  }
-
-  function updateProblemTotalCount(value: string) {
-    const parsedValue = Number(value);
-    const safeValue = Number.isFinite(parsedValue) ? parsedValue : 0;
-    const nextTotalCount = Math.max(safeValue, 0);
-
-    setLearningCheckSubmission((currentSubmission) => ({
-      ...(currentSubmission ?? activeLearningCheckSubmission),
-      problemResult: {
-        correctCount: Math.min(
-          (currentSubmission ?? activeLearningCheckSubmission).problemResult
-            .correctCount,
-          nextTotalCount,
-        ),
-        totalCount: nextTotalCount,
-      },
-    }));
-  }
-
-  function toggleConfusedConcept(concept: string) {
-    setLearningCheckSubmission((currentSubmission) => {
-      const baseSubmission = currentSubmission ?? activeLearningCheckSubmission;
-      const hasConcept = baseSubmission.confusedConcepts.includes(concept);
-      const confusedConcepts = hasConcept
-        ? baseSubmission.confusedConcepts.filter((item) => item !== concept)
-        : [...baseSubmission.confusedConcepts, concept];
-
-      return {
-        ...baseSubmission,
-        confusedConcepts,
-      };
-    });
-  }
-
-  function toggleCompletedItem(itemId: string) {
-    setLearningCheckSubmission((currentSubmission) => {
-      const baseSubmission = currentSubmission ?? activeLearningCheckSubmission;
-      const completedItemIds = baseSubmission.completedItemIds.includes(itemId)
-        ? baseSubmission.completedItemIds.filter((id) => id !== itemId)
-        : [...baseSubmission.completedItemIds, itemId];
-      const skippedItemIds = demoTodaySession.items
-        .filter((item) => !completedItemIds.includes(item.id))
-        .map((item) => item.id);
-
-      return {
-        ...baseSubmission,
-        completedItemIds,
-        skippedItemIds,
-      };
-    });
-  }
-
   function createTodaySessionProposalMessage(
     session: Pick<typeof demoTodaySession, "goal" | "estimatedMinutes" | "items">,
     introduction: string,
@@ -1287,6 +1203,9 @@ export function App() {
     switch (visibleAttachmentStep) {
       case "progress-report": {
         const report = learningProgressReport ?? createLearningProgressReport();
+        const recommendedNextLesson = report.recommendedNextLessonId
+          ? demoTodaySession.items.find((item) => item.id === report.recommendedNextLessonId)
+          : null;
 
         return (
           <article
@@ -1308,7 +1227,18 @@ export function App() {
               {report.recommendedNextLessonTitle ? (
                 <div>
                   <dt>다음 추천 강의</dt>
-                  <dd>{report.recommendedNextLessonTitle}</dd>
+                  <dd className="progress-report-recommendation">
+                    <span>{report.recommendedNextLessonTitle}</span>
+                    {recommendedNextLesson ? (
+                      <button
+                        type="button"
+                        className="progress-report-play-button"
+                        onClick={() => playLessonFromProgressReport(recommendedNextLesson)}
+                      >
+                        강의 재생
+                      </button>
+                    ) : null}
+                  </dd>
                 </div>
               ) : null}
               <div>
@@ -1573,165 +1503,6 @@ export function App() {
           </article>
         );
 
-      case "learning-check":
-        return (
-          <article className="chat-attachment attachment-wide">
-            <AttachmentHeader
-              eyebrow="학습 후 체크"
-              title="오늘 결과를 알려 주세요"
-              description="이 입력값은 다음 수업 조율의 근거로 사용됩니다. 실제 서비스 단계에서는 서버 저장소로 옮겨야 하지만, 데모에서는 localStorage에만 임시 저장합니다."
-            />
-
-            <div className="check-layout">
-              <div className="check-form" aria-label="학습 후 체크 입력">
-                <LearningLevelCheckboxGroup
-                  label="이해도"
-                  options={understandingLevelOptions}
-                  selectedLevel={activeLearningCheckSubmission.understandingLevel}
-                  onSelect={(level) => updateLearningLevel("understandingLevel", level)}
-                />
-
-                <LearningLevelCheckboxGroup
-                  label="집중도"
-                  options={focusLevelOptions}
-                  selectedLevel={activeLearningCheckSubmission.focusLevel}
-                  onSelect={(level) => updateLearningLevel("focusLevel", level)}
-                />
-
-                <div className="field-group">
-                  <span>확인 문제</span>
-                  <div className="problem-input-row">
-                    <label>
-                      <input
-                        type="number"
-                        min="0"
-                        max={activeLearningCheckSubmission.problemResult.totalCount}
-                        value={activeLearningCheckSubmission.problemResult.correctCount}
-                        onChange={(event) =>
-                          updateProblemCorrectCount(event.target.value)
-                        }
-                      />
-                      <span>정답 수</span>
-                    </label>
-                    <label>
-                      <input
-                        type="number"
-                        min="0"
-                        value={activeLearningCheckSubmission.problemResult.totalCount}
-                        onChange={(event) => updateProblemTotalCount(event.target.value)}
-                      />
-                      <span>전체 문항</span>
-                    </label>
-                  </div>
-                </div>
-
-                <div className="field-group">
-                  <span>헷갈린 개념</span>
-                  <div className="checkbox-grid">
-                    {conceptOptions.map((concept) => (
-                      <label className="check-chip" key={concept}>
-                        <input
-                          type="checkbox"
-                          checked={activeLearningCheckSubmission.confusedConcepts.includes(
-                            concept,
-                          )}
-                          onChange={() => toggleConfusedConcept(concept)}
-                        />
-                        <span>{concept}</span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="field-group">
-                  <span>완료한 항목</span>
-                  <div className="item-check-list">
-                    {demoTodaySession.items.map((item) => (
-                      <label key={item.id}>
-                        <input
-                          type="checkbox"
-                          checked={activeLearningCheckSubmission.completedItemIds.includes(
-                            item.id,
-                          )}
-                          onChange={() => toggleCompletedItem(item.id)}
-                        />
-                        <span>{item.title}</span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              <LearningSummary
-                activeLearningCheckSubmission={activeLearningCheckSubmission}
-                problemAccuracyPercent={problemAccuracyPercent}
-                recommendedActions={demoLearningCheckAnalysis.recommendedActions}
-                reviewConcepts={demoLearningCheckAnalysis.reviewConcepts}
-              />
-            </div>
-
-            <div className="attachment-actions">
-              <button
-                type="button"
-                onClick={() =>
-                  handleHomeQuickReply(
-                    "다음 수업 조율 결과를 보여 주세요.",
-                    "next-session",
-                  )
-                }
-              >
-                다음 수업 조율 보기
-              </button>
-              <button
-                type="button"
-                className="secondary-button"
-                onClick={() => handleHomeQuickReply("오늘 수업을 다시 보여 주세요.", "today")}
-              >
-                오늘 수업 다시 보기
-              </button>
-            </div>
-          </article>
-        );
-
-      case "next-session":
-        return (
-          <article className="chat-attachment attachment-wide">
-            <AttachmentHeader
-              eyebrow="조율된 다음 수업"
-              title={demoNextSession.goal}
-              description={demoNextSession.teacherComment}
-              aside={`${demoNextSession.estimatedMinutes}분`}
-            />
-
-            <p className="teacher-comment">{demoNextSession.adjustmentReason}</p>
-            <ExplanationList items={demoNextSession.explanationItems} />
-
-            <div className="session-timeline compact-timeline">
-              {demoNextSession.items.map((item, index) => (
-                <LessonRow item={item} index={index} key={item.id} />
-              ))}
-            </div>
-
-            <div className="attachment-actions">
-              <button
-                type="button"
-                onClick={() =>
-                  handleHomeQuickReply("커리큘럼 맵을 보여 주세요.", "curriculum-map")
-                }
-              >
-                커리큘럼 맵 보기
-              </button>
-              <button
-                type="button"
-                className="secondary-button"
-                onClick={() => handleHomeQuickReply("오늘 수업을 다시 보여 주세요.", "today")}
-              >
-                오늘 수업 다시 보기
-              </button>
-            </div>
-          </article>
-        );
-
       case "curriculum-map":
         return (
           <article className="chat-attachment attachment-wide">
@@ -1882,9 +1653,14 @@ export function App() {
               nextLessonCountdown?.messageId === message.id ? (
                 <div className="next-lesson-countdown" aria-live="polite">
                   <strong>{nextLessonCountdown.remainingSeconds}초 뒤 자동 재생</strong>
-                  <button type="button" onClick={cancelNextLessonCountdown}>
-                    자동 재생 취소
-                  </button>
+                  <div className="next-lesson-countdown-actions">
+                    <button type="button" onClick={playNextLessonNow}>
+                      지금 재생
+                    </button>
+                    <button type="button" onClick={cancelNextLessonCountdown}>
+                      취소
+                    </button>
+                  </div>
                 </div>
               ) : null}
               {message.attachmentStep ? (
@@ -2249,101 +2025,6 @@ function DevStepControl({
         </button>
       </div>
     </aside>
-  );
-}
-
-function LearningSummary({
-  activeLearningCheckSubmission,
-  problemAccuracyPercent,
-  recommendedActions,
-  reviewConcepts,
-}: {
-  activeLearningCheckSubmission: LearningCheckSubmission;
-  problemAccuracyPercent: number | null;
-  recommendedActions: LearningRecommendation[];
-  reviewConcepts: string[];
-}) {
-  return (
-    <aside className="learning-result-panel" aria-label="학습 후 체크 요약">
-      <span className="eyebrow">즉시 분석</span>
-      <dl className="summary-list">
-        <div>
-          <dt>이해도</dt>
-          <dd>
-            {getLearningLevelLabel(
-              understandingLevelOptions,
-              activeLearningCheckSubmission.understandingLevel,
-            )}
-          </dd>
-        </div>
-        <div>
-          <dt>집중도</dt>
-          <dd>
-            {getLearningLevelLabel(
-              focusLevelOptions,
-              activeLearningCheckSubmission.focusLevel,
-            )}
-          </dd>
-        </div>
-        <div>
-          <dt>확인 문제</dt>
-          <dd>
-            {activeLearningCheckSubmission.problemResult.correctCount}/
-            {activeLearningCheckSubmission.problemResult.totalCount}개 정답
-            {problemAccuracyPercent !== null ? ` · ${problemAccuracyPercent}%` : ""}
-          </dd>
-        </div>
-        <div>
-          <dt>조율 판단</dt>
-          <dd>
-            {recommendedActions.map((action) => recommendationLabels[action]).join(" · ")}
-          </dd>
-        </div>
-      </dl>
-
-      <div className="tag-row emphasis-tags">
-        {reviewConcepts.map((concept) => (
-          <span key={concept}>{concept}</span>
-        ))}
-      </div>
-    </aside>
-  );
-}
-
-function LearningLevelCheckboxGroup({
-  label,
-  options,
-  selectedLevel,
-  onSelect,
-}: {
-  label: string;
-  options: Array<{
-    level: LearningCheckLevel;
-    label: string;
-    description: string;
-  }>;
-  selectedLevel: LearningCheckLevel;
-  onSelect: (level: LearningCheckLevel) => void;
-}) {
-  return (
-    <div className="field-group">
-      <span>{label}</span>
-      <div className="learning-choice-grid">
-        {options.map((option) => (
-          <label className="learning-choice" key={option.level}>
-            <input
-              type="checkbox"
-              checked={selectedLevel === option.level}
-              onChange={() => onSelect(option.level)}
-            />
-            <span>
-              <strong>{option.label}</strong>
-              <em>{option.description}</em>
-            </span>
-          </label>
-        ))}
-      </div>
-    </div>
   );
 }
 

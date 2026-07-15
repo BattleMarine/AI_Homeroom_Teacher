@@ -62,7 +62,7 @@ export function fitLessonItemsToMaxMinutes(
   const delayedItems: LessonItem[] = [];
 
   while (sumLessonMinutes(selectedItems) > maxMinutes) {
-    const removableIndex = findLastRemovableItemIndex(selectedItems);
+    const removableIndex = findDeferredItemIndex(selectedItems);
 
     if (removableIndex < 0) {
       break;
@@ -96,12 +96,26 @@ function getLessonPriority(item: LessonItem, weakConceptSet: Set<string>): numbe
   return lessonKindPriority[item.kind];
 }
 
-function findLastRemovableItemIndex(items: LessonItem[]): number {
-  for (let index = items.length - 1; index >= 0; index -= 1) {
-    if (!items[index].required) {
-      return index;
-    }
+function findDeferredItemIndex(items: LessonItem[]): number {
+  if (items.length <= 1) {
+    return -1;
   }
 
-  return -1;
+  return items.reduce((candidateIndex, item, index) => {
+    const candidate = items[candidateIndex];
+
+    if (getDeferralPriority(item) >= getDeferralPriority(candidate)) {
+      return index;
+    }
+
+    return candidateIndex;
+  }, 0);
+}
+
+function getDeferralPriority(item: LessonItem): number {
+  if (!item.required) {
+    return 10;
+  }
+
+  return lessonKindPriority[item.kind];
 }

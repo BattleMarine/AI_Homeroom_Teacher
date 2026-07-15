@@ -259,6 +259,12 @@ p {
   font-size: 0.8rem;
 }
 
+.next-lesson-countdown-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 6px;
+}
+
 .next-lesson-countdown button {
   background: #fff;
   border: 1px solid #9dbcf0;
@@ -378,8 +384,7 @@ p {
   max-width: 680px;
 }
 
-.home-brief,
-.check-layout {
+.home-brief {
   display: grid;
   gap: 12px;
   grid-template-columns: minmax(220px, 0.8fr) minmax(0, 1.2fr);
@@ -387,7 +392,6 @@ p {
 
 .progress-card,
 .mini-panel,
-.learning-result-panel,
 .attachment-note {
   background: #fff;
   border: 1px solid #e1e8f2;
@@ -643,6 +647,26 @@ p {
   margin: 0;
 }
 
+.progress-report-recommendation {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+}
+
+.progress-report-play-button {
+  background: #fff;
+  border: 1px solid #9dbcf0;
+  color: #1f5fd1;
+  flex: 0 0 auto;
+  font-size: 0.76rem;
+  padding: 6px 8px;
+}
+
+.progress-report-play-button:hover {
+  background: #eef5ff;
+}
+
 .readonly-progress-report-hint {
   color: #60748e;
   font-size: 0.82rem;
@@ -749,174 +773,6 @@ p {
   color: #1f5fd1;
   font-weight: 800;
   padding: 12px;
-}
-
-.check-form {
-  display: grid;
-  gap: 12px;
-}
-
-.field-group {
-  display: grid;
-  gap: 8px;
-}
-
-.field-group > span {
-  color: #60748e;
-  font-size: 0.82rem;
-  font-weight: 900;
-}
-
-.learning-choice-grid {
-  display: grid;
-  gap: 7px;
-}
-
-.learning-choice {
-  align-items: flex-start;
-  background: #fff;
-  border: 1px solid #dce5f0;
-  border-radius: 8px;
-  cursor: pointer;
-  display: grid;
-  gap: 9px;
-  grid-template-columns: auto minmax(0, 1fr);
-  padding: 10px;
-}
-
-.learning-choice:has(input:checked) {
-  background: #eef5ff;
-  border-color: #1f5fd1;
-  box-shadow: inset 0 0 0 1px #1f5fd1;
-}
-
-.learning-choice input {
-  accent-color: #1f5fd1;
-  margin-top: 4px;
-}
-
-.learning-choice span {
-  display: grid;
-  gap: 3px;
-}
-
-.learning-choice strong {
-  color: #172033;
-  font-size: 0.88rem;
-}
-
-.learning-choice em {
-  color: #60748e;
-  font-size: 0.78rem;
-  font-style: normal;
-  line-height: 1.45;
-}
-
-.problem-input-row {
-  display: grid;
-  gap: 8px;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.problem-input-row label {
-  display: grid;
-  gap: 5px;
-}
-
-.problem-input-row input {
-  border: 1px solid #c8d5e6;
-  border-radius: 8px;
-  color: #172033;
-  font-weight: 900;
-  padding: 9px 10px;
-}
-
-.problem-input-row span {
-  color: #60748e;
-  font-size: 0.78rem;
-  font-weight: 800;
-}
-
-.checkbox-grid {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 7px;
-}
-
-.check-chip {
-  align-items: center;
-  background: #fff;
-  border: 1px solid #dce5f0;
-  border-radius: 999px;
-  color: #3d5878;
-  display: inline-flex;
-  font-size: 0.8rem;
-  font-weight: 800;
-  gap: 5px;
-  padding: 6px 9px;
-}
-
-.check-chip:has(input:checked) {
-  background: #fff3d9;
-  border-color: #e4be67;
-  color: #825a08;
-}
-
-.item-check-list {
-  display: grid;
-  gap: 7px;
-}
-
-.item-check-list label {
-  align-items: flex-start;
-  background: #fff;
-  border: 1px solid #dce5f0;
-  border-radius: 8px;
-  color: #172033;
-  display: grid;
-  gap: 8px;
-  grid-template-columns: auto minmax(0, 1fr);
-  padding: 9px;
-}
-
-.item-check-list span {
-  color: #4b5d77;
-  font-size: 0.86rem;
-  font-weight: 700;
-  line-height: 1.45;
-}
-
-.learning-result-panel {
-  align-self: start;
-  display: grid;
-  gap: 12px;
-}
-
-.summary-list {
-  display: grid;
-  gap: 10px;
-  margin: 0;
-}
-
-.summary-list div {
-  border-bottom: 1px solid #e5ebf5;
-  display: grid;
-  gap: 8px;
-  grid-template-columns: 82px minmax(0, 1fr);
-  padding-bottom: 9px;
-}
-
-.summary-list dt {
-  color: #60748e;
-  font-size: 0.82rem;
-  font-weight: 900;
-}
-
-.summary-list dd {
-  color: #172033;
-  font-size: 0.86rem;
-  font-weight: 900;
-  margin: 0;
 }
 
 .step-item {
@@ -1406,7 +1262,6 @@ p {
   }
 
   .home-brief,
-  .check-layout,
   .choice-card-grid,
   .request-card-grid,
   .lesson-content {
@@ -1455,6 +1310,11 @@ p {
   .next-lesson-countdown {
     align-items: stretch;
     display: grid;
+  }
+
+  .next-lesson-countdown-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
   }
 
   .next-lesson-countdown button {
@@ -1543,7 +1403,6 @@ p {
     grid-template-columns: 1fr;
   }
 
-  .problem-input-row,
   .composer-input-row {
     grid-template-columns: 1fr;
   }
