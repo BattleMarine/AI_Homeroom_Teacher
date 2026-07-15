@@ -1058,6 +1058,12 @@ p {
   font-size: 0.84rem;
 }
 
+.feedback-error {
+  color: #b42318;
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
 .feedback-modal-backdrop {
   align-items: center;
   background: rgba(18, 30, 48, 0.48);
