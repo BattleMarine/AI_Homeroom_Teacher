@@ -1,21 +1,27 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import {
+  confirmSessionAdjustment,
+  demoStudentId,
   getApiHealth,
+  getCurriculums as getApiCurriculums,
   getCurriculumMap as getApiCurriculumMap,
+  getLessonItem,
+  getStudentContext,
   getTodaySession,
+  getTodaySessionProgress,
   recordLessonFeedback,
+  selectCurriculum,
   sendTeacherMessage,
+  type ApiCurriculumSummary,
+  type ApiLessonItem,
+  type ApiSessionAdjustment,
+  type ApiStudentContext,
+  type ApiTodaySessionProgress,
   type CurriculumMapApiResponse,
   TeacherApiRequestError,
   type TodaySessionApiResponse,
 } from "../api/teacher-api";
-import {
-  getCurriculumMap,
-  getCurriculums,
-  type Curriculum,
-  type CurriculumId,
-  type CurriculumProgressStatus,
-} from "../features/curriculum";
+import { type CurriculumId, type CurriculumProgressStatus } from "../features/curriculum";
 import {
   type LessonFeedback,
   type LearningCheckLevel,
@@ -45,8 +51,6 @@ const curriculumStatusClassNames: Record<CurriculumProgressStatus, string> = {
   "보강 필요": "review",
   연기됨: "delayed",
 };
-
-const curriculumOptions = getCurriculums();
 
 const demoStepOptions: Array<{
   step: DemoStep;
@@ -97,8 +101,7 @@ const demoStepOptions: Array<{
 
 const stepOrder = demoStepOptions.map((option) => option.step);
 const aiResponseDelayMs = 500;
-
-type ChatAttachment = DemoStep | "today-summary" | "progress-report";
+type ChatAttachment = DemoStep | "today-summary" | "progress-report" | "session-adjustment";
 
 type TodaySessionSummary = {
   goal: string;
@@ -132,45 +135,31 @@ type ChatTranscriptMessage = {
   attachmentStep?: ChatAttachment;
   todaySessionSummary?: TodaySessionSummary;
   learningProgressReport?: LearningProgressReport;
+  sessionAdjustment?: ApiSessionAdjustment;
   isNextLessonCountdownNotice?: boolean;
 };
 
 function createApiTodaySessionSummary(
   apiSession: TodaySessionApiResponse["session"],
-  fallbackItems: LessonItem[],
 ): TodaySessionSummary {
   return {
     goal: apiSession.goal,
     estimatedMinutes: apiSession.estimatedMinutes,
-    items: apiSession.items.map((apiItem) => {
-      const fallbackItem = fallbackItems.find((item) => item.id === apiItem.id);
-
-      return {
-        id: apiItem.id,
-        kind: apiItem.kind,
-        title: apiItem.title,
-        estimatedMinutes: apiItem.estimatedMinutes,
-        required: apiItem.required,
-        description: fallbackItem?.description ?? "AI 담임이 오늘 수업에 포함한 학습 항목입니다.",
-        conceptTags: fallbackItem?.conceptTags ?? [],
-        reason: fallbackItem?.reason ?? "오늘 수업의 필수 학습 흐름에 포함했습니다.",
-      };
-    }),
+    items: apiSession.items.map(toLessonItem),
   };
 }
 
-function mapApiCurriculumStatus(
-  status: CurriculumMapApiResponse["curriculumMap"]["steps"][number]["status"],
-): CurriculumProgressStatus {
-  switch (status) {
-    case "completed":
-      return "완료";
-    case "current":
-      return "진행 중";
-    case "planned":
-    default:
-      return "예정";
-  }
+function toLessonItem(item: ApiLessonItem): LessonItem {
+  return {
+    id: item.id,
+    kind: item.kind,
+    title: item.title,
+    description: item.description,
+    conceptTags: [...item.conceptTags],
+    estimatedMinutes: item.estimatedMinutes,
+    required: item.required,
+    reason: item.reason,
+  };
 }
 
 function getApiErrorMessage(
@@ -363,9 +352,7 @@ function createFeedbackBasedLearningCheckSubmission(
 export function App() {
   const [initialDemoStorageState] = useState(() => readDemoStorageState());
   const [selectedCurriculumId, setSelectedCurriculumId] =
-    useState<CurriculumId | null>(
-      () => initialDemoStorageState?.selectedCurriculumId ?? null,
-    );
+    useState<string | null>(null);
   const [learningCheckSubmission, setLearningCheckSubmission] =
     useState<LearningCheckSubmission | null>(
       () => initialDemoStorageState?.learningCheckSubmission ?? null,
@@ -381,12 +368,20 @@ export function App() {
   const [isAssistantPreparing, setIsAssistantPreparing] = useState(false);
   const [apiConnectionState, setApiConnectionState] = useState<ApiConnectionState>("loading");
   const [apiConnectionError, setApiConnectionError] = useState<string | null>(null);
+  const [apiCurriculums, setApiCurriculums] = useState<ApiCurriculumSummary[]>([]);
+  const [apiStudentContext, setApiStudentContext] = useState<ApiStudentContext | null>(null);
   const [apiTodaySession, setApiTodaySession] = useState<TodaySessionApiResponse | null>(
     null,
   );
   const [apiCurriculumMap, setApiCurriculumMap] = useState<CurriculumMapApiResponse | null>(
     null,
   );
+  const [apiSessionProgress, setApiSessionProgress] = useState<ApiTodaySessionProgress | null>(
+    null,
+  );
+  const [pendingSessionAdjustment, setPendingSessionAdjustment] =
+    useState<ApiSessionAdjustment | null>(null);
+  const [isSessionAdjustmentConfirming, setIsSessionAdjustmentConfirming] = useState(false);
   const [activeLesson, setActiveLesson] = useState<LessonItem | null>(null);
   const [isMockLessonPlaying, setIsMockLessonPlaying] = useState(false);
   const [isLessonFeedbackSubmitting, setIsLessonFeedbackSubmitting] = useState(false);
@@ -421,7 +416,7 @@ export function App() {
     },
   ]);
 
-  const selectedCurriculumIdForData = selectedCurriculumId ?? "stable-log";
+  const selectedCurriculumIdForData = (selectedCurriculumId ?? "stable-log") as CurriculumId;
   const hasSelectedCurriculum = selectedCurriculumId !== null;
   const { demoCurriculum, demoStudentState } = useMemo(
     () => createDemoSessionData(selectedCurriculumIdForData),
@@ -455,37 +450,17 @@ export function App() {
   const apiTodaySessionSummary = useMemo(
     () =>
       apiTodaySession
-        ? createApiTodaySessionSummary(apiTodaySession.session, demoTodaySession.items)
+        ? createApiTodaySessionSummary(apiTodaySession.session)
         : null,
-    [apiTodaySession, demoTodaySession.items],
-  );
-  const demoCurriculumSteps = useMemo(
-    () =>
-      getCurriculumMap(demoCurriculum, {
-        currentStepId: adjustedStudentState.currentStepId,
-        completedStepIds: adjustedStudentState.completedStepIds,
-        delayedStepIds: adjustedStudentState.delayedStepIds,
-        weakConcepts: adjustedStudentState.weakConcepts,
-      }),
-    [adjustedStudentState, demoCurriculum],
+    [apiTodaySession],
   );
   const displayedCurriculumSteps = useMemo(() => {
     if (!apiCurriculumMap) {
-      return demoCurriculumSteps;
+      return [];
     }
 
-    return apiCurriculumMap.curriculumMap.steps.map((apiStep) => {
-      const fallbackStep = demoCurriculumSteps.find((step) => step.id === apiStep.id);
-
-      return {
-        id: apiStep.id,
-        title: apiStep.title,
-        conceptTags: fallbackStep?.conceptTags ?? [],
-        estimatedMinutes: fallbackStep?.estimatedMinutes ?? 0,
-        status: mapApiCurriculumStatus(apiStep.status),
-      };
-    });
-  }, [apiCurriculumMap, demoCurriculumSteps]);
+    return apiCurriculumMap.curriculumMap.steps;
+  }, [apiCurriculumMap]);
   const defaultLearningCheckSubmission = useMemo(
     () =>
       createFeedbackBasedLearningCheckSubmission(
@@ -512,19 +487,36 @@ export function App() {
       setApiConnectionError(null);
 
       try {
-        const [, todaySession, curriculumMap] = await Promise.all([
+        const [, curriculums, studentContext, todaySession, curriculumMap] = await Promise.all([
           getApiHealth(),
-          getTodaySession(),
-          getApiCurriculumMap(),
+          getApiCurriculums(demoStudentId),
+          getStudentContext(demoStudentId),
+          getTodaySession(demoStudentId),
+          getApiCurriculumMap(demoStudentId),
         ]);
 
         if (isCancelled) {
           return;
         }
 
+        setApiCurriculums(curriculums.curriculums);
+        setApiStudentContext(studentContext.studentContext);
         setApiTodaySession(todaySession);
         setApiCurriculumMap(curriculumMap);
+        setSelectedCurriculumId(studentContext.studentContext.selectedCurriculumId);
         setApiConnectionState("connected");
+
+        void getTodaySessionProgress(demoStudentId)
+          .then((response) => {
+            if (!isCancelled) {
+              setApiSessionProgress(response.progress);
+            }
+          })
+          .catch(() => {
+            if (!isCancelled) {
+              setApiSessionProgress(null);
+            }
+          });
       } catch (error) {
         if (isCancelled) {
           return;
@@ -578,10 +570,16 @@ export function App() {
     [],
   );
 
-  const progressPercent = Math.round(
-    (adjustedStudentState.completedStepCount / adjustedStudentState.totalStepCount) *
-      100,
+  const displayedCurriculumTitle = apiCurriculumMap?.curriculumMap.curriculumTitle;
+  const displayedCurrentStep = apiCurriculumMap?.curriculumMap.steps.find(
+    (step) => step.id === apiCurriculumMap.curriculumMap.currentStepId,
   );
+  const displayedCompletedStepCount = apiCurriculumMap?.curriculumMap.completedStepIds.length ?? 0;
+  const displayedStepCount = apiCurriculumMap?.curriculumMap.steps.length ?? 0;
+  const displayedProgressPercent =
+    displayedStepCount > 0
+      ? Math.round((displayedCompletedStepCount / displayedStepCount) * 100)
+      : 0;
   function createChatMessageId(prefix: string) {
     chatMessageIdRef.current += 1;
     return `${prefix}-${Date.now()}-${chatMessageIdRef.current}`;
@@ -613,7 +611,71 @@ export function App() {
   }
 
   function getDisplayedTodaySessionSummary() {
-    return apiTodaySessionSummary ?? createTodaySessionSummary(demoTodaySession);
+    return (
+      apiTodaySessionSummary ?? {
+        goal: "수업 정보를 불러오는 중입니다.",
+        estimatedMinutes: 0,
+        items: [],
+      }
+    );
+  }
+
+  async function refreshServerState() {
+    const [studentContext, todaySession, curriculumMap, curriculums] = await Promise.all([
+      getStudentContext(demoStudentId),
+      getTodaySession(demoStudentId),
+      getApiCurriculumMap(demoStudentId),
+      getApiCurriculums(demoStudentId),
+    ]);
+
+    setApiStudentContext(studentContext.studentContext);
+    setApiTodaySession(todaySession);
+    setApiCurriculumMap(curriculumMap);
+    setApiCurriculums(curriculums.curriculums);
+    setSelectedCurriculumId(studentContext.studentContext.selectedCurriculumId);
+
+    try {
+      const progress = await getTodaySessionProgress(demoStudentId);
+      setApiSessionProgress(progress.progress);
+    } catch {
+      setApiSessionProgress(null);
+    }
+  }
+
+  function applyCurriculumSnapshot(snapshot: {
+    studentContext: ApiStudentContext;
+    session: TodaySessionApiResponse["session"];
+    curriculumMap: CurriculumMapApiResponse["curriculumMap"];
+  }) {
+    setApiStudentContext(snapshot.studentContext);
+    setApiTodaySession({ dataSource: "mock", session: snapshot.session });
+    setApiCurriculumMap({ dataSource: "mock", curriculumMap: snapshot.curriculumMap });
+    setSelectedCurriculumId(snapshot.studentContext.selectedCurriculumId);
+  }
+
+  function createLearningProgressReportFromApi({
+    completedLesson,
+    appliedFeedback,
+    teacherNote,
+    progress,
+    recommendedLesson,
+  }: {
+    completedLesson: ApiLessonItem;
+    appliedFeedback: { understandingLevel: number; focusLevel: number };
+    teacherNote: string;
+    progress: ApiTodaySessionProgress;
+    recommendedLesson: LessonItem | null;
+  }): LearningProgressReport {
+    return {
+      completedLessonTitle: completedLesson.title,
+      completedLectureCount: progress.completedItemCount,
+      totalLectureCount: progress.totalItemCount,
+      recommendedNextLessonId: recommendedLesson?.id,
+      recommendedNextLessonTitle: recommendedLesson?.title,
+      understandingLevel: appliedFeedback.understandingLevel as LearningCheckLevel,
+      focusLevel: appliedFeedback.focusLevel as LearningCheckLevel,
+      teacherNote: teacherNote || progress.teacherReport,
+    };
   }
 
   function createLearningProgressReport(
@@ -738,9 +800,17 @@ export function App() {
     setIsAssistantPreparing(true);
 
     window.setTimeout(() => {
-      const appendResponse = (responseText: string) => {
+      const appendResponse = (
+        responseText: string,
+        sessionAdjustment?: ApiSessionAdjustment,
+        showAttachment = true,
+      ) => {
         setCurrentDemoStep(nextStep);
-        const attachmentStep = getVisibleAttachmentStep(nextStep);
+        const attachmentStep = sessionAdjustment
+          ? "session-adjustment"
+          : showAttachment
+            ? getVisibleAttachmentStep(nextStep)
+            : undefined;
         setChatMessages((currentMessages) => [
           ...currentMessages,
           {
@@ -756,8 +826,10 @@ export function App() {
               attachmentStep === "progress-report"
                 ? (learningProgressReport ?? createLearningProgressReport())
                 : undefined,
+            sessionAdjustment,
           },
         ]);
+        setPendingSessionAdjustment(sessionAdjustment ?? null);
         setIsAssistantPreparing(false);
         action?.();
       };
@@ -769,18 +841,17 @@ export function App() {
         return;
       }
 
-      void sendTeacherMessage("demo-student", trimmedMessage)
+      void sendTeacherMessage(demoStudentId, "frontend-conversation", trimmedMessage)
         .then((response) => {
           setApiConnectionState("connected");
           setApiConnectionError(null);
-          appendResponse(response.assistantMessage);
+          appendResponse(response.assistantMessage, response.attachment?.data);
         })
-        .catch(() => {
+        .catch((error) => {
           setApiConnectionState("error");
-          setApiConnectionError(
-            "AI 담임 API에 연결하지 못했습니다. 현재 대화는 기존 데모 응답으로 이어집니다.",
-          );
-          appendResponse(fallbackText);
+          const errorMessage = getApiErrorMessage(error, "initial-load");
+          setApiConnectionError(errorMessage);
+          appendResponse(errorMessage, undefined, false);
         });
     }, aiResponseDelayMs);
   }
@@ -946,7 +1017,7 @@ export function App() {
   }
 
   function handleSelectCurriculumFromChat(curriculumId: CurriculumId) {
-    const selectedCurriculum = curriculumOptions.find(
+    const selectedCurriculum = apiCurriculums.find(
       (curriculum) => curriculum.id === curriculumId,
     );
     const { demoStudentState: studentState } = createDemoSessionData(curriculumId);
@@ -1010,16 +1081,25 @@ export function App() {
     handleStudentRequestFromChat("short_time");
   }
 
-  function openMockLesson(item: LessonItem) {
+  async function openMockLesson(item: LessonItem) {
     setLessonFeedbackError(null);
-    setActiveLesson({
-      ...item,
-      conceptTags: [...item.conceptTags],
-    });
-    setIsMockLessonPlaying(false);
+    try {
+      const response = await getLessonItem(demoStudentId, item.id);
+      const lesson = toLessonItem(response.lessonItem);
 
-    if (typeof window !== "undefined") {
-      window.history.pushState(null, "", `#lesson-${item.id}`);
+      setActiveLesson(lesson);
+      setIsMockLessonPlaying(false);
+      setApiConnectionState("connected");
+      setApiConnectionError(null);
+
+      if (typeof window !== "undefined") {
+        window.history.pushState(null, "", `#lesson-${lesson.id}`);
+      }
+    } catch (error) {
+      const errorMessage = getApiErrorMessage(error, "initial-load");
+      setApiConnectionState("error");
+      setApiConnectionError(errorMessage);
+      setLessonFeedbackError(errorMessage);
     }
   }
 
@@ -1042,6 +1122,7 @@ export function App() {
 
     try {
       const apiResult = await recordLessonFeedback({
+        studentId: demoStudentId,
         lessonId: feedback.lessonItemId,
         understandingLevel: feedback.understandingLevel,
         focusLevel: feedback.focusLevel,
@@ -1053,6 +1134,20 @@ export function App() {
 
       setApiConnectionState("connected");
       setApiConnectionError(null);
+      setApiSessionProgress(apiResult.progress);
+
+      const recommendedNextLesson = apiResult.progress.nextRecommendedLesson
+        ? toLessonItem(
+            (
+              await getLessonItem(
+                demoStudentId,
+                apiResult.progress.nextRecommendedLesson.id,
+              )
+            ).lessonItem,
+          )
+        : null;
+
+      await refreshServerState();
 
       const nextFeedbacks = [
         ...lessonFeedbacks.filter((item) => item.lessonItemId !== feedback.lessonItemId),
@@ -1063,7 +1158,7 @@ export function App() {
       setLearningCheckSubmission(
         createFeedbackBasedLearningCheckSubmission(demoTodaySession, nextFeedbacks),
       );
-      const nextLesson = getRecommendedNextLesson(nextFeedbacks);
+      const nextLesson = recommendedNextLesson;
       closeMockLesson();
       sendUserMessageAndPrepareResponse({
         message: `${feedback.lessonTitle} 학습을 마쳤어요. 이해도와 집중도를 전달할게요.`,
@@ -1073,7 +1168,13 @@ export function App() {
             ? "오늘 편성된 강의를 모두 마쳤어요. 강의별 응답을 반영했고, 다음 수업 조율은 AI 담임이 내부에서 계속 관리하겠습니다."
             : `강의별 응답을 반영했습니다. 다음으로 '${nextLesson.title}'을 추천할게요. 재생 전 잠깐만 준비할 시간을 드리겠습니다.`,
         action: nextLesson === null ? undefined : () => beginNextLessonCountdown(nextLesson),
-        learningProgressReport: createLearningProgressReport(nextFeedbacks, apiResult.teacherNote),
+        learningProgressReport: createLearningProgressReportFromApi({
+          completedLesson: apiResult.completedLesson,
+          appliedFeedback: apiResult.appliedFeedback,
+          teacherNote: apiResult.teacherNote,
+          progress: apiResult.progress,
+          recommendedLesson: nextLesson,
+        }),
       });
     } catch (error) {
       const errorMessage = getApiErrorMessage(error, "lesson-feedback");
@@ -1083,6 +1184,99 @@ export function App() {
       setLessonFeedbackError(errorMessage);
     } finally {
       setIsLessonFeedbackSubmitting(false);
+    }
+  }
+
+  function selectCurriculumFromApi(curriculumId: string) {
+    const selectedCurriculum = apiCurriculums.find((curriculum) => curriculum.id === curriculumId);
+
+    if (isAssistantPreparing) {
+      return;
+    }
+
+    setChatMessages((currentMessages) => [
+      ...currentMessages,
+      {
+        id: createChatMessageId("user"),
+        role: "user",
+        text: `${selectedCurriculum?.title ?? "선택한 커리큘럼"}으로 시작할게요.`,
+      },
+    ]);
+    setIsAssistantPreparing(true);
+
+    void selectCurriculum(demoStudentId, curriculumId)
+      .then(async (snapshot) => {
+        applyCurriculumSnapshot(snapshot);
+        setApiConnectionState("connected");
+        setApiConnectionError(null);
+        setCurrentDemoStep("today");
+        setChatMessages((currentMessages) => [
+          ...currentMessages,
+          {
+            id: createChatMessageId("assistant"),
+            role: "assistant",
+            text: snapshot.session.teacherComment,
+            attachmentStep: "today-summary",
+            todaySessionSummary: createApiTodaySessionSummary(snapshot.session),
+          },
+        ]);
+
+        void getTodaySessionProgress(demoStudentId)
+          .then((response) => setApiSessionProgress(response.progress))
+          .catch(() => setApiSessionProgress(null));
+      })
+      .catch((error) => {
+        const errorMessage = getApiErrorMessage(error, "initial-load");
+        setApiConnectionState("error");
+        setApiConnectionError(errorMessage);
+        setChatMessages((currentMessages) => [
+          ...currentMessages,
+          { id: createChatMessageId("assistant"), role: "assistant", text: errorMessage },
+        ]);
+      })
+      .finally(() => {
+        setIsAssistantPreparing(false);
+      });
+  }
+
+  async function confirmPendingSessionAdjustment(adjustment: ApiSessionAdjustment) {
+    if (isSessionAdjustmentConfirming) {
+      return;
+    }
+
+    setIsSessionAdjustmentConfirming(true);
+
+    try {
+      const snapshot = await confirmSessionAdjustment(demoStudentId, adjustment.adjustmentId);
+      applyCurriculumSnapshot(snapshot);
+      setPendingSessionAdjustment(null);
+      setApiConnectionState("connected");
+      setApiConnectionError(null);
+      setCurrentDemoStep("today");
+      setChatMessages((currentMessages) => [
+        ...currentMessages,
+        {
+          id: createChatMessageId("assistant"),
+          role: "assistant",
+          text: snapshot.session.teacherComment,
+          attachmentStep: "today-summary",
+          todaySessionSummary: createApiTodaySessionSummary(snapshot.session),
+        },
+      ]);
+
+      void getTodaySessionProgress(demoStudentId)
+        .then((response) => setApiSessionProgress(response.progress))
+        .catch(() => setApiSessionProgress(null));
+    } catch (error) {
+      const errorMessage = getApiErrorMessage(error, "initial-load");
+      setApiConnectionState("error");
+      setApiConnectionError(errorMessage);
+      setChatMessages((currentMessages) => [
+        ...currentMessages,
+        { id: createChatMessageId("assistant"), role: "assistant", text: errorMessage },
+      ]);
+    } finally {
+      setIsSessionAdjustmentConfirming(false);
     }
   }
 
@@ -1125,13 +1319,6 @@ export function App() {
         assistantText: "좋습니다. 먼저 학습 흐름을 정해 보겠습니다. 아래에서 지금 상태에 맞는 커리큘럼을 골라 주세요.",
         requestTeacherMessage: true,
       });
-      return;
-    }
-
-    const requestKind = getMockStudentRequestKind(trimmedMessage);
-
-    if (requestKind) {
-      sendStudentRequestProposal(trimmedMessage, requestKind, true);
       return;
     }
 
@@ -1230,17 +1417,17 @@ export function App() {
           {
             label: "안정형으로 시작",
             message: "안정형 커리큘럼으로 시작할게요.",
-            action: () => handleSelectCurriculumFromChat("stable-log"),
+            action: () => selectCurriculumFromApi("stable-log"),
           },
           {
             label: "압축형으로 시작",
             message: "압축형 커리큘럼으로 시작할게요.",
-            action: () => handleSelectCurriculumFromChat("compressed-log"),
+            action: () => selectCurriculumFromApi("compressed-log"),
           },
           {
             label: "문제적용형으로 시작",
             message: "문제적용형 커리큘럼으로 시작할게요.",
-            action: () => handleSelectCurriculumFromChat("practice-log"),
+            action: () => selectCurriculumFromApi("practice-log"),
           },
         ];
       case "today":
@@ -1421,10 +1608,44 @@ export function App() {
     step: ChatAttachment,
     todaySessionSummary?: TodaySessionSummary,
     learningProgressReport?: LearningProgressReport,
+    sessionAdjustment?: ApiSessionAdjustment,
   ) {
     const visibleAttachmentStep = getVisibleAttachmentStep(step);
 
     switch (visibleAttachmentStep) {
+      case "session-adjustment": {
+        const adjustment = sessionAdjustment ?? pendingSessionAdjustment;
+
+        if (!adjustment) {
+          return null;
+        }
+
+        return (
+          <article className="chat-attachment attachment-wide">
+            <AttachmentHeader
+              eyebrow="AI 담임 제안"
+              title="오늘 수업을 이렇게 조정해도 될까요?"
+              description={adjustment.teacherNote}
+              aside={`${adjustment.proposedSession.estimatedMinutes}분`}
+            />
+            <div className="session-timeline">
+              {adjustment.proposedSession.items.map((item, index) => (
+                <LessonRow item={toLessonItem(item)} index={index} key={item.id} />
+              ))}
+            </div>
+            <div className="attachment-actions">
+              <button
+                type="button"
+                disabled={isSessionAdjustmentConfirming}
+                onClick={() => void confirmPendingSessionAdjustment(adjustment)}
+              >
+                {isSessionAdjustmentConfirming ? "적용 중..." : "이 편성으로 진행할게요"}
+              </button>
+            </div>
+          </article>
+        );
+      }
+
       case "progress-report": {
         const report = learningProgressReport ?? createLearningProgressReport();
         const recommendedNextLesson = report.recommendedNextLessonId
@@ -1503,7 +1724,8 @@ export function App() {
               {session.items.map((item, index) => {
                 const isCompletedLecture =
                   item.kind === "lecture" &&
-                  lessonFeedbacks.some((feedback) => feedback.lessonItemId === item.id);
+                  (apiSessionProgress?.completedItemIds.includes(item.id) ??
+                    lessonFeedbacks.some((feedback) => feedback.lessonItemId === item.id));
 
                 return (
                   <li key={item.id}>
@@ -1555,14 +1777,22 @@ export function App() {
             />
 
             <div className="choice-card-grid">
-              {curriculumOptions.map((curriculum) => (
-                <CurriculumCard
-                  curriculum={curriculum}
-                  isSelected={curriculum.id === selectedCurriculumId}
-                  key={curriculum.id}
-                  onSelect={handleSelectCurriculumFromChat}
-                />
-              ))}
+              {apiCurriculums.length > 0 ? (
+                apiCurriculums.map((curriculum) => (
+                  <CurriculumCard
+                    curriculum={curriculum}
+                    isSelected={curriculum.id === selectedCurriculumId}
+                    key={curriculum.id}
+                    onSelect={selectCurriculumFromApi}
+                  />
+                ))
+              ) : (
+                <p className="attachment-note">
+                  {apiConnectionState === "loading"
+                    ? "커리큘럼 목록을 불러오는 중입니다."
+                    : apiConnectionError ?? "커리큘럼 목록을 불러오지 못했습니다."}
+                </p>
+              )}
             </div>
 
             <p className="attachment-note">
@@ -1577,9 +1807,9 @@ export function App() {
           <article className="chat-attachment attachment-wide">
             <AttachmentHeader
               eyebrow={hasSelectedCurriculum ? "오늘 수업" : "오늘 수업 미리보기"}
-              title={demoTodaySession.goal}
-              description={demoTodaySession.teacherComment}
-              aside={`${demoTodaySession.estimatedMinutes}분`}
+              title={apiTodaySession?.session.goal ?? "수업 정보를 불러오는 중입니다."}
+              description={apiTodaySession?.session.teacherComment ?? apiConnectionError ?? undefined}
+              aside={apiTodaySession ? `${apiTodaySession.session.estimatedMinutes}분` : undefined}
             />
 
             {!hasSelectedCurriculum ? (
@@ -1590,9 +1820,15 @@ export function App() {
             ) : null}
 
             <div className="session-timeline">
-              {demoTodaySession.items.map((item, index) => (
-                <LessonRow item={item} index={index} key={item.id} />
-              ))}
+              {apiTodaySession ? (
+                apiTodaySession.session.items.map((item, index) => (
+                  <LessonRow item={toLessonItem(item)} index={index} key={item.id} />
+                ))
+              ) : (
+                <p className="attachment-note">
+                  {apiConnectionError ?? "오늘 수업 정보를 불러오고 있습니다."}
+                </p>
+              )}
             </div>
 
             <div className="attachment-actions">
@@ -1690,16 +1926,16 @@ export function App() {
             <AttachmentHeader
               eyebrow="AI 담임 판단"
               title="왜 이렇게 배정됐나요?"
-              description={demoTodaySession.adjustmentReason}
+              description={apiTodaySession?.session.adjustmentReason ?? apiConnectionError ?? undefined}
             />
 
-            <ExplanationList items={demoTodaySession.explanationItems} />
+            <ExplanationList items={apiTodaySession?.session.explanationItems ?? []} />
 
             <section className="mini-panel" aria-labelledby="weak-title">
               <span className="eyebrow">보강 필요 개념</span>
               <h3 id="weak-title">오늘 먼저 잡을 부분</h3>
               <div className="tag-row emphasis-tags">
-                {adjustedStudentState.weakConcepts.map((concept) => (
+                {(apiStudentContext?.weakConcepts ?? []).map((concept) => (
                   <span key={concept}>{concept}</span>
                 ))}
               </div>
@@ -1783,17 +2019,16 @@ export function App() {
               <section className="home-brief" aria-label="오늘 수업 요약">
                 <div className="progress-card">
                   <span className="eyebrow">현재 커리큘럼</span>
-                  <strong>{adjustedStudentState.selectedCurriculumTitle}</strong>
-                  <p>{adjustedStudentState.currentStepTitle} 진행 중</p>
+                  <strong>{displayedCurriculumTitle ?? "커리큘럼 정보를 불러오는 중입니다."}</strong>
+                  <p>{displayedCurrentStep?.title ?? "현재 단계를 확인하는 중입니다."} 진행 중</p>
                   <div
                     className="progress-track"
-                    aria-label={`진도율 ${progressPercent}%`}
+                    aria-label={`진도율 ${displayedProgressPercent}%`}
                   >
-                    <div style={{ width: `${progressPercent}%` }} />
+                    <div style={{ width: `${displayedProgressPercent}%` }} />
                   </div>
                   <span>
-                    {adjustedStudentState.completedStepCount}/
-                    {adjustedStudentState.totalStepCount}단계 완료
+                    {displayedCompletedStepCount}/{displayedStepCount}단계 완료
                   </span>
                 </div>
 
@@ -1902,6 +2137,7 @@ export function App() {
                     message.attachmentStep,
                     message.todaySessionSummary,
                     message.learningProgressReport,
+                    message.sessionAdjustment,
                   )}
                 </div>
               ) : null}
@@ -2290,9 +2526,9 @@ function CurriculumCard({
   isSelected,
   onSelect,
 }: {
-  curriculum: Curriculum;
+  curriculum: ApiCurriculumSummary;
   isSelected: boolean;
-  onSelect: (curriculumId: CurriculumId) => void;
+  onSelect: (curriculumId: string) => void;
 }) {
   return (
     <button
