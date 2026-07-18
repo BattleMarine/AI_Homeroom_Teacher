@@ -1,3 +1,5 @@
+import type { TeacherLlmTool } from "../teacher-llm/teacher-llm.types.js";
+
 export const mockTodaySession = {
   goal: "로그함수 그래프의 점근선과 평행이동 정리",
   estimatedMinutes: 44,
@@ -45,16 +47,26 @@ export const mockCurriculumMap = {
   ],
 } as const;
 
-export function createMockTeacherMessage(message: string) {
+export function createMockTeacherMessage(message: string): {
+  responseType: "mock";
+  assistantMessage: string;
+  requestedTools: TeacherLlmTool[];
+} {
   const normalizedMessage = message.trim();
-  const isShortTimeRequest = normalizedMessage.includes("시간") || normalizedMessage.includes("부족");
+  const isCurriculumAdjustmentRequest =
+    normalizedMessage.includes("시간") ||
+    normalizedMessage.includes("부족") ||
+    normalizedMessage.includes("복습") ||
+    normalizedMessage.includes("새 강의") ||
+    normalizedMessage.includes("진도") ||
+    normalizedMessage.includes("헷갈");
 
   return {
     responseType: "mock" as const,
-    assistantMessage: isShortTimeRequest
-      ? "시간이 부족한 상황을 반영해 오늘 수업량을 다시 계산하겠습니다. 우선 취약 개념 복습과 필수 강의를 중심으로 편성안을 제안할게요."
+    assistantMessage: isCurriculumAdjustmentRequest
+      ? "말씀해 주신 조건을 반영해 오늘 수업량과 보강 우선순위를 다시 계산했습니다. 제안한 편성을 확인해 주시면 적용하겠습니다."
       : "말씀해 주신 내용을 AI 담임이 이해했습니다. 현재 커리큘럼과 학습 기록을 바탕으로 다음 수업을 조율하겠습니다.",
-    requestedTools: isShortTimeRequest ? ["adjust_curriculum"] : ["get_student_context"],
+    requestedTools: isCurriculumAdjustmentRequest ? ["adjust_curriculum"] : ["get_student_context"],
   };
 }
 

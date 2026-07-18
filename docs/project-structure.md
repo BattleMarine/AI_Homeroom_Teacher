@@ -32,6 +32,14 @@ AI_Homeroom_Teacher/
         server.ts
         mock/
           teacher.mock.ts
+        progress/
+          progress.types.ts
+          progress.mock-data.ts
+          progress.mock-service.ts
+        teacher-llm/
+          teacher-llm.types.ts
+          teacher-llm.service.ts
+          teacher-llm.mock.ts
   docs/
     README.md
     project-structure.md
@@ -105,7 +113,7 @@ AI_Homeroom_Teacher/
 | `docs/` | 구현 전 설계 문서와 이후 개발 참고 문서를 관리합니다. |
 | `public/` | 정적 이미지, 아이콘, 데모용 공개 자산을 둡니다. |
 | `src/` | 실제 애플리케이션 코드를 둡니다. |
-| `apps/api/` | 프론트엔드와 분리된 HTTP API 서버를 둡니다. 초기에는 mock 데이터를 반환하고, 이후 인증·DB·LLM 오케스트레이터를 추가합니다. |
+| `apps/api/` | 프론트엔드와 분리된 HTTP API 서버를 둡니다. 초기에는 학생별 메모리 mock 상태와 진도 응답을 반환하고, 이후 인증·DB·LLM 오케스트레이터를 추가합니다. |
 
 ## `src/app`
 

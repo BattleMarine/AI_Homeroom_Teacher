@@ -23,7 +23,9 @@ AI 담임이 사전 정의된 커리큘럼을 기반으로 오늘 수업을 편�
 | [implementation-roadmap.md](./implementation-roadmap.md) | 구현 순서와 각 단계에서 만들 파일 범위를 정리합니다. |
 | [repository-management.md](./repository-management.md) | GitHub 관리 시 제외해야 할 민감 정보, 로그, 임시 산출물 기준을 정리합니다. |
 | [backend-api-foundation.md](./backend-api-foundation.md) | 프론트엔드와 분리된 mock API 서버의 책임, 초기 엔드포인트, 환경 변수 원칙을 정리합니다. |
+| [backend-api-guide.md](./backend-api-guide.md) | 현재 백엔드 구현과 일치하는 HTTP 메서드, 요청·응답 예시, 오류 조건, 프론트 전환 순서를 제공합니다. |
 | [backend-development-brief.md](./backend-development-brief.md) | 백엔드 개발 세션이 알아야 할 제품 목표, 책임 경계, 구현 단계, 품질·보안 기준을 정리합니다. |
+| [teacher-llm-api.md](./teacher-llm-api.md) | AI 담임 LLM API의 mock 구현, 교체 가능한 서비스 계약, 실제 LLM 전환 원칙을 정리합니다. |
 | [prompts/backend-development-session.md](./prompts/backend-development-session.md) | 별도 백엔드 개발 세션을 시작할 때 사용할 작업 프롬프트를 제공합니다. |
 | [claims/README.md](./claims/README.md) | 프론트엔드와 백엔드 사이의 문제를 클레임 문서로 기록하고 응답하는 협업 규칙을 정리합니다. |
 | [claims/lesson-feedback-proxy-issue.md](./claims/lesson-feedback-proxy-issue.md) | 강의별 체크 API 전달 실패의 재현 결과와 프론트·백엔드 확인 요청을 기록합니다. |
@@ -53,6 +55,8 @@ AI 담임 답변 안에 카드가 첨부되는 UI 구현 완료
 채팅 흐름에 맞춘 컴팩트 첨부 카드 UI 구현 완료
 채팅 메시지 누적 및 AI 준비 중 점 애니메이션 구현 완료
 오늘 수업·커리큘럼 맵·채팅 메시지·강의별 체크 mock API 연결 완료
+커리큘럼 선택·학생 상태·강의 상세·진행 보고를 서버 상태 기반 mock API로 이전 중
+AI 담임 대화 API의 mock LLM 어댑터 구현 완료
 LLM API 연결 미구현
 ```
 

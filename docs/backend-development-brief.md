@@ -32,6 +32,8 @@ LLM이 커리큘럼 상태를 임의로 바꾸거나 판단을 독점하지 않�
 | `POST` | `/api/conversations/:conversationId/messages` | 학생 메시지에 대한 mock AI 담임 응답을 반환 |
 | `POST` | `/api/lesson-feedback` | 강의별 이해도·집중도 기록 결과를 반환 |
 
+AI 담임 대화 API는 `apps/api/src/teacher-llm/`의 교체 가능한 mock LLM 서비스로 동작합니다. 실제 LLM 공급자 연결 전까지는 같은 응답 계약을 유지하며, 상세 설계는 `docs/teacher-llm-api.md`에서 관리합니다.
+
 실제 코드와 초기 API 계약은 [backend-api-foundation.md](./backend-api-foundation.md)를 기준으로 확인합니다.
 
 ## 책임 경계
