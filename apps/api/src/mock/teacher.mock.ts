@@ -61,13 +61,30 @@ export function createMockTeacherMessage(message: string): {
     normalizedMessage.includes("진도") ||
     normalizedMessage.includes("헷갈");
 
+  const requestedCurriculumTool = getRequestedCurriculumTool(normalizedMessage);
+
   return {
     responseType: "mock" as const,
-    assistantMessage: isCurriculumAdjustmentRequest
-      ? "말씀해 주신 조건을 반영해 오늘 수업량과 보강 우선순위를 다시 계산했습니다. 제안한 편성을 확인해 주시면 적용하겠습니다."
-      : "말씀해 주신 내용을 AI 담임이 이해했습니다. 현재 커리큘럼과 학습 기록을 바탕으로 다음 수업을 조율하겠습니다.",
-    requestedTools: isCurriculumAdjustmentRequest ? ["adjust_curriculum"] : ["get_student_context"],
+    assistantMessage: requestedCurriculumTool
+      ? "커리큘럼 도구에 요청을 전달해 기준 계획과 기한 정보를 계산했습니다. 현재는 모든 추천 유형이 같은 기준 계획을 사용합니다."
+      : isCurriculumAdjustmentRequest
+        ? "말씀해 주신 조건을 반영해 오늘 수업 분량과 보강 우선순위를 다시 계산했습니다. 제안안을 확인해 주시면 적용하겠습니다."
+        : "말씀해 주신 내용을 AI 담임이 이해했습니다. 현재 커리큘럼과 학습 기록을 바탕으로 다음 수업을 조율하겠습니다.",
+    requestedTools: requestedCurriculumTool
+      ? [requestedCurriculumTool]
+      : isCurriculumAdjustmentRequest
+        ? ["adjust_curriculum"]
+        : ["get_student_context"],
   };
+}
+
+function getRequestedCurriculumTool(message: string): TeacherLlmTool | undefined {
+  if (!message.includes("커리큘럼") && !message.includes("기한") && !message.includes("마감")) return undefined;
+  if (message.includes("압축")) return "compress_curriculum_plan";
+  if (message.includes("늘리") || message.includes("연장")) return "extend_curriculum_plan";
+  if (message.includes("기한") || message.includes("마감")) return "assess_curriculum_deadline";
+  if (message.includes("적용") || message.includes("확정")) return "apply_curriculum_plan";
+  return "create_curriculum_plan";
 }
 
 export function createMockLearningFeedbackResult(

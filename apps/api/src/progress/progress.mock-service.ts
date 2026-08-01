@@ -7,13 +7,17 @@ import type {
   StudentRequestKind,
   StudentContext,
   TodaySession,
+  TodaySessionProgress,
 } from "./progress.types.js";
 
-const defaultStudentId = "demo-student";
+const defaultStudentId = "000";
 
 export function createMockProgressService(): ProgressService {
   const contexts = new Map<string, StudentContext>();
   const adjustmentProposals = new Map<string, AdjustmentProposal>();
+  const appliedCurriculums = new Map<string, CurriculumDefinition>();
+  const remediationItems = new Map<string, LessonItem[]>();
+  const revisions = new Map<string, number>();
 
   function getContext(studentId: string): StudentContext {
     const normalizedStudentId = studentId || defaultStudentId;
@@ -26,15 +30,24 @@ export function createMockProgressService(): ProgressService {
     return initialContext;
   }
 
+  function getRevision(studentId: string): number {
+    return revisions.get(studentId || defaultStudentId) ?? 0;
+  }
+
+  function bumpRevision(studentId: string) {
+    const normalizedStudentId = studentId || defaultStudentId;
+    revisions.set(normalizedStudentId, getRevision(normalizedStudentId) + 1);
+  }
   function getCurrentCurriculum(studentId: string): CurriculumDefinition {
-    return getCurriculum(getContext(studentId).selectedCurriculumId);
+    const context = getContext(studentId);
+    return appliedCurriculums.get(context.studentId) ?? getCurriculum(context.selectedCurriculumId);
   }
 
   function getTodaySession(studentId: string): TodaySession {
     const context = getContext(studentId);
     const currentStep = getRequiredStep(getCurrentCurriculum(studentId), context.currentStepId);
     const { selectedItems, delayedItems } = fitItemsToMaxMinutes(
-      currentStep.items,
+      getEffectiveItems(context, currentStep),
       context.maxSessionMinutes,
     );
 
@@ -56,7 +69,12 @@ export function createMockProgressService(): ProgressService {
     };
   }
 
-  function getTodaySessionProgress(studentId: string): Record<string, unknown> {
+  function getEffectiveItems(context: StudentContext, step: CurriculumDefinition["steps"][number]): LessonItem[] {
+    const insertedItems = remediationItems.get(context.studentId) ?? [];
+    return [...insertedItems, ...step.items].filter((item) => !context.deferredLessonItemIds.includes(item.id));
+  }
+
+  function getTodaySessionProgress(studentId: string): TodaySessionProgress {
     const context = getContext(studentId);
     const session = getTodaySession(studentId);
     const completedItems = session.items.filter((item) => context.completedLessonItemIds.includes(item.id));
@@ -74,7 +92,7 @@ export function createMockProgressService(): ProgressService {
       completedItems,
       carryOverItems: session.delayedItems,
       isCompleted,
-      nextRecommendedLesson: nextLesson ?? null,
+      nextRecommendedItem: nextLesson ? createNextRecommendedItem(nextLesson) : null,
       teacherReport: isCompleted
         ? "오늘 수업의 필수 항목을 모두 마쳤습니다. 다음 수업 편성에 학습 기록을 반영하겠습니다."
         : nextLesson
@@ -91,13 +109,31 @@ export function createMockProgressService(): ProgressService {
 
     if (!item) return undefined;
 
+    const { mockPlayback, ...lessonItem } = item;
+
     return {
-      ...item,
+      ...lessonItem,
       currentSessionId: `${context.studentId}:${currentStep.id}`,
       sessionReason: item.reason,
       completed: context.completedLessonItemIds.includes(item.id),
-      playback: item.playbackTargetId ? { kind: "mock-video", targetId: item.playbackTargetId } : null,
+      playback: mockPlayback
+        ? {
+            kind: mockPlayback.kind,
+            targetId: mockPlayback.targetId,
+            mediaType: mockPlayback.mediaType,
+            contentType: mockPlayback.contentType,
+            mediaUrl: `/api/lesson-items/${item.id}/playback?studentId=${encodeURIComponent(context.studentId)}`,
+            durationSeconds: mockPlayback.durationSeconds,
+          }
+        : null,
     };
+  }
+
+  function getLessonPlayback(studentId: string, lessonItemId: string) {
+    const curriculum = getCurrentCurriculum(studentId);
+    const item = curriculum.steps.flatMap((step) => step.items).find((candidate) => candidate.id === lessonItemId);
+
+    return item?.mockPlayback;
   }
 
   function createAdjustmentProposal(studentId: string, message: string): Record<string, unknown> | undefined {
@@ -158,8 +194,10 @@ export function createMockProgressService(): ProgressService {
       delayedStepIds: [...proposal.proposedContext.delayedStepIds],
       weakConcepts: [...proposal.proposedContext.weakConcepts],
       completedLessonItemIds: [...proposal.proposedContext.completedLessonItemIds],
+      deferredLessonItemIds: [...proposal.proposedContext.deferredLessonItemIds],
     };
     contexts.set(confirmedContext.studentId, confirmedContext);
+    bumpRevision(confirmedContext.studentId);
     adjustmentProposals.delete(adjustmentId);
 
     return {
@@ -169,6 +207,27 @@ export function createMockProgressService(): ProgressService {
       session: getTodaySession(confirmedContext.studentId),
       curriculumMap: getCurriculumMap(confirmedContext.studentId),
       teacherNote: "요청한 조건을 오늘 수업에 반영했습니다. 이 편성으로 진행해 볼게요.",
+    };
+  }
+
+  function getCurriculumMap(studentId: string): Record<string, unknown> {
+    const context = getContext(studentId);
+    const curriculum = getCurrentCurriculum(studentId);
+
+    return {
+      curriculumId: curriculum.id,
+      curriculumTitle: curriculum.title,
+      currentStepId: context.currentStepId,
+      completedStepIds: context.completedStepIds,
+      delayedStepIds: context.delayedStepIds,
+      weakConcepts: context.weakConcepts,
+      steps: curriculum.steps.map((step) => ({
+        id: step.id,
+        title: step.title,
+        conceptTags: step.conceptTags,
+        estimatedMinutes: step.estimatedMinutes,
+        status: getStepStatus(step, context),
+      })),
     };
   }
 
@@ -188,8 +247,10 @@ export function createMockProgressService(): ProgressService {
     },
 
     selectCurriculum(studentId, curriculumId) {
-      const curriculum = mockCurriculums.find((item) => item.id === curriculumId);
-      if (!curriculum) return undefined;
+      if (!mockCurriculums.some((item) => item.id === curriculumId)) return undefined;
+      const curriculum = getCurriculum(curriculumId as CurriculumId);
+      appliedCurriculums.delete(studentId || defaultStudentId);
+      remediationItems.delete(studentId || defaultStudentId);
       const context = createInitialContext(studentId || defaultStudentId, curriculum);
       contexts.set(context.studentId, context);
       adjustmentProposals.forEach((proposal, proposalId) => {
@@ -206,27 +267,67 @@ export function createMockProgressService(): ProgressService {
 
     getTodaySessionProgress,
 
-    getCurriculumMap(studentId) {
+    getRevision,
+
+    applyCurriculumPlan(studentId, plan) {
       const context = getContext(studentId);
-      const curriculum = getCurrentCurriculum(studentId);
-      return {
-        curriculumId: curriculum.id,
-        curriculumTitle: curriculum.title,
-        currentStepId: context.currentStepId,
-        completedStepIds: context.completedStepIds,
-        delayedStepIds: context.delayedStepIds,
-        weakConcepts: context.weakConcepts,
-        steps: curriculum.steps.map((step) => ({
-          id: step.id,
-          title: step.title,
-          conceptTags: step.conceptTags,
-          estimatedMinutes: step.estimatedMinutes,
-          status: getStepStatus(step, context),
-        })),
+      const appliedContext: StudentContext = {
+        ...context,
+        currentStepId: plan.initialProgress.currentStepId,
+        completedStepIds: [],
+        delayedStepIds: [],
+        weakConcepts: [...plan.initialProgress.weakConcepts],
+        completedLessonItemIds: [],
+        deferredLessonItemIds: [],
       };
+      appliedCurriculums.set(context.studentId, plan);
+      remediationItems.delete(context.studentId);
+      contexts.set(context.studentId, appliedContext);
+      bumpRevision(context.studentId);
+      return { studentContext: appliedContext, session: getTodaySession(context.studentId), curriculumMap: getCurriculumMap(context.studentId) };
     },
 
+    insertRemediation(studentId, input) {
+      const context = getContext(studentId);
+      const step = getRequiredStep(getCurrentCurriculum(studentId), context.currentStepId);
+      const concept = input.concept?.trim() || step.conceptTags[0];
+      if (!concept) return undefined;
+      const items = remediationItems.get(context.studentId) ?? [];
+      const item: LessonItem = { id: `remediation-${context.studentId}-${items.length + 1}`, kind: "review", title: `${concept} 보강`, description: `${concept}을 다시 확인하는 짧은 보강입니다.`, conceptTags: [concept], estimatedMinutes: input.estimatedMinutes ?? 10, required: true, reason: "낮은 이해도 보강 삽입" };
+      remediationItems.set(context.studentId, [...items, item]);
+      bumpRevision(context.studentId);
+      addUniqueConcepts(context.weakConcepts, [concept]);
+      return { insertedItem: item, session: getTodaySession(context.studentId), curriculumMap: getCurriculumMap(context.studentId) };
+    },
+
+    deferLessonItem(studentId, lessonItemId) {
+      const context = getContext(studentId);
+      const session = getTodaySession(context.studentId);
+      const target = lessonItemId ? session.items.find((item) => item.id === lessonItemId) : [...session.items].reverse().find((item) => !context.completedLessonItemIds.includes(item.id));
+      if (!target) return undefined;
+      if (!context.deferredLessonItemIds.includes(target.id)) {
+        context.deferredLessonItemIds.push(target.id);
+        bumpRevision(context.studentId);
+      }
+      return { deferredItem: target, session: getTodaySession(context.studentId), curriculumMap: getCurriculumMap(context.studentId) };
+    },
+
+    assessScheduleImpact(studentId, input) {
+      const context = getContext(studentId);
+      const curriculum = getCurrentCurriculum(context.studentId);
+      const currentIndex = curriculum.steps.findIndex((step) => step.id === context.currentStepId);
+      const remainingMinutes = curriculum.steps.slice(Math.max(currentIndex, 0)).reduce((total, step, index) => total + sumMinutes(index === 0 ? getEffectiveItems(context, step) : step.items), 0);
+      const availableMinutesPerDay = input.availableMinutesPerDay ?? context.maxSessionMinutes;
+      const minimumRequiredDays = Math.ceil(remainingMinutes / availableMinutesPerDay);
+      const targetDays = input.targetDays ?? null;
+      return { remainingMinutes, deferredLessonItemCount: context.deferredLessonItemIds.length, remediationItemCount: (remediationItems.get(context.studentId) ?? []).length, minimumRequiredDays, availableMinutesPerDay, targetDays, targetAchievable: targetDays === null ? null : minimumRequiredDays <= targetDays };
+    },
+
+    getCurriculumMap,
+
     getLessonItem,
+
+    getLessonPlayback,
 
     createAdjustmentProposal,
 
@@ -248,6 +349,7 @@ export function createMockProgressService(): ProgressService {
         reasonCodes.push("low_focus", "reduce_next_session_load");
       }
       if (reasonCodes.length === 0) reasonCodes.push("stable_progress");
+      bumpRevision(context.studentId);
 
       return {
         responseType: "mock" as const,
@@ -264,6 +366,35 @@ export function createMockProgressService(): ProgressService {
   };
 }
 
+function createNextRecommendedItem(item: LessonItem) {
+  const action = getRecommendedLearningAction(item.kind);
+  const playbackAvailable = item.mockPlayback !== undefined;
+
+  if (action === "play-lesson" && !playbackAvailable) {
+    throw new Error(`재생 가능한 mock 미디어가 없는 강의 항목입니다. ${item.id}`);
+  }
+
+  return {
+    id: item.id,
+    kind: item.kind,
+    title: item.title,
+    action,
+    playbackAvailable,
+  };
+}
+
+function getRecommendedLearningAction(kind: LessonItem["kind"]) {
+  switch (kind) {
+    case "lecture":
+      return "play-lesson" as const;
+    case "review":
+      return "open-review" as const;
+    case "practice":
+      return "start-practice" as const;
+    case "check":
+      return "start-check" as const;
+  }
+}
 function createInitialContext(studentId: string, curriculum: CurriculumDefinition): StudentContext {
   return {
     studentId,
@@ -275,13 +406,29 @@ function createInitialContext(studentId: string, curriculum: CurriculumDefinitio
     completedLessonItemIds: [],
     lowFocusRecorded: false,
     maxSessionMinutes: 45,
+    deferredLessonItemIds: [],
   };
 }
 
 function getCurriculum(curriculumId: CurriculumId): CurriculumDefinition {
-  const curriculum = mockCurriculums.find((item) => item.id === curriculumId);
-  if (!curriculum) throw new Error(`존재하지 않는 mock 커리큘럼입니다: ${curriculumId}`);
-  return curriculum;
+  const selectedCurriculum = mockCurriculums.find((item) => item.id === curriculumId);
+  const baselineCurriculum = mockCurriculums.find((item) => item.id === "stable-log");
+
+  if (!selectedCurriculum || !baselineCurriculum) {
+    throw new Error(`존재하지 않는 mock 커리큘럼입니다. ${curriculumId}`);
+  }
+
+  if (selectedCurriculum.id === baselineCurriculum.id) return baselineCurriculum;
+
+  return {
+    ...baselineCurriculum,
+    id: selectedCurriculum.id,
+    title: selectedCurriculum.title,
+    pace: selectedCurriculum.pace,
+    description: selectedCurriculum.description,
+    recommendedFor: selectedCurriculum.recommendedFor,
+    teacherComment: selectedCurriculum.teacherComment,
+  };
 }
 
 function getRequiredStep(curriculum: CurriculumDefinition, stepId: string) {

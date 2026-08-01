@@ -24,6 +24,7 @@ AI 담임이 사전 정의된 커리큘럼을 기반으로 오늘 수업을 편�
 | [repository-management.md](./repository-management.md) | GitHub 관리 시 제외해야 할 민감 정보, 로그, 임시 산출물 기준을 정리합니다. |
 | [backend-api-foundation.md](./backend-api-foundation.md) | 프론트엔드와 분리된 mock API 서버의 책임, 초기 엔드포인트, 환경 변수 원칙을 정리합니다. |
 | [backend-api-guide.md](./backend-api-guide.md) | 현재 백엔드 구현과 일치하는 HTTP 메서드, 요청·응답 예시, 오류 조건, 프론트 전환 순서를 제공합니다. |
+| [curriculum-recommendation-algorithm.md](./curriculum-recommendation-algorithm.md) | 강좌 카탈로그를 이용한 규칙 기반 커리큘럼 추천 조건, 처리 순서, 한계와 DB 전환 지점을 정의합니다. |
 | [backend-development-brief.md](./backend-development-brief.md) | 백엔드 개발 세션이 알아야 할 제품 목표, 책임 경계, 구현 단계, 품질·보안 기준을 정리합니다. |
 | [teacher-llm-api.md](./teacher-llm-api.md) | AI 담임 LLM API의 mock 구현, 교체 가능한 서비스 계약, 실제 LLM 전환 원칙을 정리합니다. |
 | [prompts/backend-development-session.md](./prompts/backend-development-session.md) | 별도 백엔드 개발 세션을 시작할 때 사용할 작업 프롬프트를 제공합니다. |

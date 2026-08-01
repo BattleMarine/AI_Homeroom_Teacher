@@ -16,7 +16,7 @@ POST /api/conversations/:conversationId/messages
 
 ```json
 {
-  "studentId": "frontend-demo",
+  "studentId": "000",
   "message": "오늘 시간이 부족해서 복습 위주로 하고 싶어요."
 }
 ```
@@ -58,7 +58,7 @@ POST /api/session-adjustments/:adjustmentId/confirm
 
 ```json
 {
-  "studentId": "frontend-demo"
+  "studentId": "000"
 }
 ```
 
@@ -92,3 +92,9 @@ LLM이 요청한 도구 호출은 서버가 허용 목록과 입력값을 검증
 ```
 
 실제 공급자 전환 시에는 `responseType`을 `llm`으로 바꾸고, API 계약 변경 여부를 프론트 세션과 클레임 문서에서 함께 확인합니다.
+
+## 커리큘럼 도구 요청
+
+mock LLM은 커리큘럼 관련 메시지를 받으면 `create_curriculum_plan`, `compress_curriculum_plan`, `extend_curriculum_plan`, `assess_curriculum_deadline`, `apply_curriculum_plan` 중 하나를 요청합니다. 대화 API는 이 요청을 서버의 규칙 기반 도구로 실행한 뒤 `toolCalls`에 결과를 포함합니다.
+
+현재 선택 유형별 실제 차등 정책은 아직 적용하지 않았으므로, 모든 도구 결과의 `appliedPlanProfile`은 `baseline`입니다. 도구 상세 계약은 [curriculum-tool-api.md](./curriculum-tool-api.md)를 참고합니다.

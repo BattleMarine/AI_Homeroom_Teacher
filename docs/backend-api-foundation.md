@@ -29,13 +29,17 @@ apps/api
 | 메서드 | 경로 | 역할 |
 | --- | --- | --- |
 | `GET` | `/api/health` | API 서버 상태와 mock 모드 확인 |
+| `GET` | `/api/course-catalogs` | 파일 기반 강좌 카탈로그의 강좌 목록 반환 |
+| `GET` | `/api/course-catalogs/:courseId` | 강좌 정보와 원본 강의 목록 반환 |
+| `POST` | `/api/curriculum-recommendations` | 카탈로그·완료 이력·시간 조건을 기반으로 규칙형 학습 경로와 일별 세션 추천 |
 | `GET` | `/api/curriculums` | 커리큘럼 목록과 현재 선택 상태 반환 |
 | `POST` | `/api/student-context/curriculum` | 커리큘럼 선택 후 학생 mock 상태 초기화 |
 | `GET` | `/api/student-context` | 현재 학생 mock 상태 반환 |
 | `GET` | `/api/today-session` | 학생 상태 기반 오늘 수업 mock 편성 반환 |
 | `GET` | `/api/today-session/progress` | 현재 수업 진행 보고와 다음 추천 항목 반환 |
 | `GET` | `/api/curriculum-map` | 학생 상태 기반 커리큘럼 맵 반환 |
-| `GET` | `/api/lesson-items/:lessonItemId` | 강의·보강·연습 항목의 상세와 mock 재생 대상 반환 |
+| `GET` | `/api/lesson-items/:lessonItemId` | 강의·보강·연습 항목의 상세와 mock 재생 메타데이터 반환 |
+| `GET` | `/api/lesson-items/:lessonItemId/playback` | 재생 가능한 강의의 백엔드 소유 mock 미디어 반환 |
 | `POST` | `/api/conversations/:conversationId/messages` | 학생 메시지에 대한 mock AI 담임 응답 반환 |
 | `POST` | `/api/session-adjustments/:adjustmentId/confirm` | AI 담임이 제안한 수업 조율안을 확인 후 확정 |
 | `POST` | `/api/lesson-feedback` | 강의별 이해도·집중도 기록과 진행 보고·다음 추천 반환 |
@@ -54,27 +58,27 @@ API 서버
 
 AI 담임 메시지 API는 백엔드의 `TeacherLlmService`를 통해 응답을 생성합니다. 현재는 mock 구현을 사용하며, 실제 LLM 연결은 `docs/teacher-llm-api.md`의 계약과 원칙을 따릅니다.
 
-현재 API는 커리큘럼 선택, 학생 상태, 오늘 수업, 강의 상세, 강의별 피드백과 다음 추천을 서버 mock 상태로 처리합니다. 학생 요구사항의 복합 조율안 제안·사용자 확인과 대화 카드 구조화는 다음 API 확장 단계에서 서버의 진도 엔진으로 이전합니다.
+현재 API는 커리큘럼 선택, 학생 상태, 오늘 수업, 강의 상세, 강의별 피드백과 다음 추천을 서버 mock 상태로 처리합니다. 재생 가능한 강의는 상세 응답의 `playback.mediaUrl`을 통해 백엔드 소유 PNG 기반 mock 미디어를 반환합니다. 학생 요구사항의 복합 조율안 제안·사용자 확인과 대화 카드 구조화는 다음 API 확장 단계에서 서버의 진도 엔진으로 이전합니다.
 
 ## 서버 상태 기반 mock 사용법
 
-인증 전 단계이므로 `studentId`는 임시 식별자입니다. 쿼리 또는 요청 본문에서 생략하면 `demo-student`를 사용합니다. 동일한 `studentId`를 사용하면 커리큘럼 선택과 강의별 피드백이 다음 요청에도 유지됩니다.
+인증 전 단계이므로 `studentId`는 임시 식별자입니다. 쿼리 또는 요청 본문에서 생략하면 `000`를 사용합니다. 동일한 `studentId`를 사용하면 커리큘럼 선택과 강의별 피드백이 다음 요청에도 유지됩니다.
 
 ```text
-GET /api/curriculums?studentId=frontend-demo
+GET /api/curriculums?studentId=000
 POST /api/student-context/curriculum
-GET /api/today-session?studentId=frontend-demo
-GET /api/lesson-items/{lessonItemId}?studentId=frontend-demo
+GET /api/today-session?studentId=000
+GET /api/lesson-items/{lessonItemId}?studentId=000
 POST /api/lesson-feedback
-GET /api/today-session/progress?studentId=frontend-demo
-GET /api/curriculum-map?studentId=frontend-demo
+GET /api/today-session/progress?studentId=000
+GET /api/curriculum-map?studentId=000
 ```
 
 커리큘럼 선택 요청 예시입니다.
 
 ```json
 {
-  "studentId": "frontend-demo",
+  "studentId": "000",
   "curriculumId": "compressed-log"
 }
 ```
@@ -83,7 +87,7 @@ GET /api/curriculum-map?studentId=frontend-demo
 
 ```json
 {
-  "studentId": "frontend-demo",
+  "studentId": "000",
   "lessonId": "compressed-graph-review",
   "understandingLevel": 3,
   "focusLevel": 4

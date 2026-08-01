@@ -1,4 +1,6 @@
-export type TeacherLlmTool = "get_student_context" | "adjust_curriculum";
+import type { CurriculumToolName } from "../curriculum-tools/curriculum-tool.types.js";
+
+export type TeacherLlmTool = "get_student_context" | "adjust_curriculum" | CurriculumToolName;
 
 export type TeacherLlmRequest = {
   conversationId: string;

@@ -40,6 +40,12 @@ AI_Homeroom_Teacher/
           teacher-llm.types.ts
           teacher-llm.service.ts
           teacher-llm.mock.ts
+        course-catalog/
+          course-catalog.types.ts
+          course-catalog.file-repository.ts
+        curriculum-recommendation/
+          curriculum-recommendation.types.ts
+          curriculum-recommendation.service.ts
   docs/
     README.md
     project-structure.md
@@ -48,6 +54,7 @@ AI_Homeroom_Teacher/
     curriculum-adjustment-design.md
     implementation-roadmap.md
     backend-api-foundation.md
+    curriculum-recommendation-algorithm.md
     backend-development-brief.md
     claims/
       lesson-feedback-proxy-issue.md

@@ -16,7 +16,7 @@
 
 ```bash
 export API_BASE_URL="로컬 API 서버 주소"
-export STUDENT_ID="frontend-demo"
+export STUDENT_ID="000"
 ```
 
 ### 학생 식별자
@@ -26,7 +26,7 @@ export STUDENT_ID="frontend-demo"
 ```text
 쿼리 API: ?studentId={studentId}
 본문 API: { "studentId": "..." }
-생략 시: demo-student
+생략 시: 000
 ```
 
 같은 학생 흐름에서는 모든 API 호출에 동일한 `studentId`를 사용해야 합니다. 다른 값으로 호출하면 별도의 메모리 mock 상태가 생성됩니다.
@@ -76,7 +76,132 @@ curl -sS "$API_BASE_URL/api/health"
 
 ---
 
-## 2. 커리큘럼 목록 조회
+## 2. 강좌 카탈로그 목록 조회
+
+```text
+GET /api/course-catalogs
+```
+
+```bash
+curl -sS "$API_BASE_URL/api/course-catalogs"
+```
+
+응답의 `courses`에는 추천 가능한 강좌의 메타데이터가 들어간다. 현재는 파일 기반 미적분 강좌 한 개를 반환한다.
+
+```json
+{
+  "dataSource": "mock",
+  "catalogDataSource": "file",
+  "courses": [
+    {
+      "id": "ebsi-2026-suneungwanseong-namchiyeol-math-calculus-all",
+      "primarySubject": "미적분",
+      "lessonCount": 52
+    }
+  ]
+}
+```
+
+## 3. 강좌 카탈로그 상세 조회
+
+```text
+GET /api/course-catalogs/:courseId
+```
+
+```bash
+curl -sS "$API_BASE_URL/api/course-catalogs/ebsi-2026-suneungwanseong-namchiyeol-math-calculus-all"
+```
+
+응답의 `courseCatalog.lessons`는 원본 순서를 가진 전체 강의 배열이다. `orientation`, `lecture`, `mock_exam` 유형과 `subjectAreas`, `unitNames`, `duration.seconds`를 포함한다.
+
+존재하지 않는 `courseId`는 `404`와 아래 응답을 반환한다.
+
+```json
+{
+  "message": "강좌 카탈로그를 찾을 수 없습니다."
+}
+```
+
+## 4. 커리큘럼 추천 생성
+
+```text
+POST /api/curriculum-recommendations
+```
+
+`courseId`, 과목·단원 범위, 완료 강의, 취약 단원, 하루 가능 시간, 목표 일수를 조합해 추천할 수 있다. 모든 조건은 선택값이며, 조건을 생략하면 기본 강좌 전체에서 오리엔테이션을 제외한 순서형 경로를 추천한다.
+
+```bash
+curl -sS -X POST "$API_BASE_URL/api/curriculum-recommendations" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "courseId": "ebsi-2026-suneungwanseong-namchiyeol-math-calculus-all",
+    "subjectArea": "미적분",
+    "unitNames": ["수열의 극한"],
+    "completedLessonIds": ["ebsi-namchiyeol-2026-math-calculus-028"],
+    "weakUnitNames": ["수열의 극한"],
+    "availableMinutesPerDay": 60,
+    "targetDays": 2
+  }'
+```
+
+성공 응답의 핵심 구조는 아래와 같다.
+
+```json
+{
+  "dataSource": "mock",
+  "catalogDataSource": "file",
+  "recommendation": {
+    "algorithm": "rule-based-v1",
+    "summary": {
+      "remainingLessonCount": 3,
+      "availableMinutesPerDay": 60,
+      "targetDays": 2
+    },
+    "feasibility": {
+      "targetDateConfigured": true,
+      "targetAchievable": false,
+      "requiredAverageMinutesPerDay": 74,
+      "overBudgetLessonCount": 0
+    },
+    "steps": [],
+    "sessions": [],
+    "reasonCodes": [
+      "catalog_sequence_preserved",
+      "orientation_excluded",
+      "subject_area_filtered",
+      "unit_filtered",
+      "completed_lessons_excluded",
+      "weak_unit_review_signal",
+      "target_days_at_risk"
+    ],
+    "teacherSummary": "..."
+  }
+}
+```
+
+`sessions`는 원본 강의 순서를 보존한 일별 묶음이다. `steps[].weakUnit`은 `weakUnitNames`와 일치한 단원을 표시하며, 취약 단원을 자동으로 앞으로 옮기거나 강의를 삭제하지 않는다.
+
+입력 값의 조건은 아래와 같다.
+
+| 필드 | 조건 |
+| --- | --- |
+| `courseId`, `subjectArea` | 비어 있지 않은 문자열 |
+| `unitNames`, `weakUnitNames` | 최대 50개 문자열 배열 |
+| `completedLessonIds` | 최대 500개 문자열 배열 |
+| `availableMinutesPerDay` | 정수 `1`~`720` |
+| `targetDays` | 정수 `1`~`3650` |
+
+존재하지 않는 `courseId`는 `404`, 조건에 맞는 미완료 강의가 없으면 `422`를 반환한다.
+
+```json
+{
+  "message": "추천 조건에 맞는 미완료 강의가 없습니다."
+}
+```
+
+추천 규칙과 데이터 한계는 [curriculum-recommendation-algorithm.md](./curriculum-recommendation-algorithm.md)에서 관리한다.
+
+## 5. 커리큘럼 목록 조회
 
 ```text
 GET /api/curriculums?studentId={studentId}
@@ -106,7 +231,7 @@ curl -sS --get "$API_BASE_URL/api/curriculums" \
 
 ---
 
-## 3. 커리큘럼 선택 또는 변경
+## 6. 커리큘럼 선택 또는 변경
 
 ```text
 POST /api/student-context/curriculum
@@ -116,7 +241,7 @@ POST /api/student-context/curriculum
 
 ```json
 {
-  "studentId": "frontend-demo",
+  "studentId": "000",
   "curriculumId": "compressed-log"
 }
 ```
@@ -147,7 +272,7 @@ practice-log
 
 ---
 
-## 4. 학생 현재 상태 조회
+## 7. 학생 현재 상태 조회
 
 ```text
 GET /api/student-context?studentId={studentId}
@@ -162,7 +287,7 @@ curl -sS --get "$API_BASE_URL/api/student-context" \
 
 ```json
 {
-  "studentId": "frontend-demo",
+  "studentId": "000",
   "selectedCurriculumId": "stable-log",
   "currentStepId": "log-graph",
   "completedStepIds": ["log-meaning", "log-calculation"],
@@ -176,7 +301,7 @@ curl -sS --get "$API_BASE_URL/api/student-context" \
 
 ---
 
-## 5. 오늘 수업 조회
+## 8. 오늘 수업 조회
 
 ```text
 GET /api/today-session?studentId={studentId}
@@ -191,7 +316,7 @@ curl -sS --get "$API_BASE_URL/api/today-session" \
 
 ```json
 {
-  "id": "frontend-demo:log-graph",
+  "id": "000:log-graph",
   "date": "YYYY-MM-DD",
   "goal": "로그함수 그래프의 점근선과 평행이동 정리",
   "estimatedMinutes": 44,
@@ -219,7 +344,7 @@ curl -sS --get "$API_BASE_URL/api/today-session" \
 
 ---
 
-## 6. 오늘 수업 진행 보고 조회
+## 9. 오늘 수업 진행 보고 조회
 
 ```text
 GET /api/today-session/progress?studentId={studentId}
@@ -234,7 +359,7 @@ curl -sS --get "$API_BASE_URL/api/today-session/progress" \
 
 ```json
 {
-  "sessionId": "frontend-demo:log-graph",
+  "sessionId": "000:log-graph",
   "completedItemIds": ["stable-log-graph-asymptote-lecture"],
   "completedItemCount": 1,
   "totalItemCount": 6,
@@ -242,19 +367,22 @@ curl -sS --get "$API_BASE_URL/api/today-session/progress" \
   "completedItems": [],
   "carryOverItems": [],
   "isCompleted": false,
-  "nextRecommendedLesson": {
+  "nextRecommendedItem": {
     "id": "stable-log-graph-review-asymptote",
-    "kind": "review"
+    "kind": "review",
+    "title": "점근선 보강 카드",
+    "action": "open-review",
+    "playbackAvailable": false
   },
   "teacherReport": "다음으로 점근선 보강 카드를 이어서 진행해 보겠습니다."
 }
 ```
 
-`nextRecommendedLesson`은 오늘 수업에서 아직 완료하지 않은 필수 항목을 우선 반환하며, 더 이상 없으면 `null`입니다.
+`nextRecommendedItem`은 오늘 수업에서 아직 완료하지 않은 필수 항목을 우선 반환하며, 더 이상 없으면 `null`입니다. `action`은 백엔드가 결정한 실행 방식이며, 프론트는 해당 값에 맞는 UI만 표시합니다. `play-lesson`은 `playbackAvailable: true`와 함께만 반환됩니다.
 
 ---
 
-## 7. 커리큘럼 맵 조회
+## 10. 커리큘럼 맵 조회
 
 ```text
 GET /api/curriculum-map?studentId={studentId}
@@ -291,7 +419,7 @@ curl -sS --get "$API_BASE_URL/api/curriculum-map" \
 
 ---
 
-## 8. 강의·수업 항목 상세 조회
+## 11. 강의·수업 항목 상세 조회
 
 ```text
 GET /api/lesson-items/:lessonItemId?studentId={studentId}
@@ -315,21 +443,50 @@ curl -sS --get "$API_BASE_URL/api/lesson-items/stable-log-graph-asymptote-lectur
   "required": true,
   "reason": "그래프 핵심 개념",
   "playbackTargetId": "mock-video:stable-log-graph-asymptote-lecture",
-  "currentSessionId": "frontend-demo:log-graph",
+  "currentSessionId": "000:log-graph",
   "sessionReason": "그래프 핵심 개념",
   "completed": false,
   "playback": {
     "kind": "mock-video",
-    "targetId": "mock-video:stable-log-graph-asymptote-lecture"
+    "targetId": "mock-video:stable-log-graph-asymptote-lecture",
+    "mediaType": "image",
+    "contentType": "image/png",
+    "mediaUrl": "/api/lesson-items/stable-log-graph-asymptote-lecture/playback?studentId=000",
+    "durationSeconds": 540
   }
 }
 ```
 
-현재 선택된 커리큘럼에 없는 `lessonItemId`는 `404`를 반환합니다. 실제 영상 URL은 이번 mock API 범위에 포함되지 않습니다.
+`playback.mediaUrl`은 프론트가 가공하지 않고 그대로 요청하는 `/api` 상대 경로입니다. `durationSeconds`는 모의 플레이어 표시용 길이이며 `estimatedMinutes`와 별도로 관리합니다. `review`, `practice`, `check` 항목은 `playback: null`을 반환합니다. 기존 `playbackTargetId`, `playback.kind`, `playback.targetId`는 호환성을 위해 유지합니다.
+
+### 11-1. 강의 mock 미디어 조회
+
+```text
+GET /api/lesson-items/:lessonItemId/playback?studentId={studentId}
+```
+
+강의 상세의 `playback.mediaUrl`을 그대로 요청합니다.
+
+```bash
+curl -sS --get "$API_BASE_URL/api/lesson-items/stable-log-graph-asymptote-lecture/playback" \
+  --data-urlencode "studentId=$STUDENT_ID" \
+  --output mock-lecture.png
+```
+
+성공하면 `200`과 `image/png` 바이너리를 반환합니다. API는 서버 내부의 허용된 `assetKey`만 사용하며, 요청의 `lessonItemId`를 파일 경로로 연결하지 않습니다.
+
+| 상태 | 의미 |
+| --- | --- |
+| `200` | 재생 가능한 lecture의 mock PNG 반환 |
+| `400` | 비어 있거나 형식이 잘못된 `studentId` 또는 `lessonItemId` |
+| `404` | 현재 학생의 커리큘럼에 없는 항목 또는 재생 불가 항목 |
+| `500` | 등록된 mock 미디어 자산을 읽지 못함 |
+
+실제 영상 URL, 스트리밍, CDN, 구간 재생은 이번 mock API 범위에 포함하지 않습니다.
 
 ---
 
-## 9. 강의별 이해도·집중도 기록
+## 12. 강의별 이해도·집중도 기록
 
 ```text
 POST /api/lesson-feedback
@@ -339,7 +496,7 @@ POST /api/lesson-feedback
 
 ```json
 {
-  "studentId": "frontend-demo",
+  "studentId": "000",
   "lessonId": "stable-log-graph-asymptote-lecture",
   "understandingLevel": 2,
   "focusLevel": 2
@@ -379,11 +536,11 @@ curl -sS -X POST "$API_BASE_URL/api/lesson-feedback" \
 }
 ```
 
-`progress`의 구조는 `GET /api/today-session/progress`의 `progress`와 같습니다. 프론트는 이 응답으로 진행 보고와 다음 추천 강의를 표시합니다.
+`progress`의 구조는 `GET /api/today-session/progress`의 `progress`와 같습니다. 프론트는 이 응답으로 진행 보고와 다음 추천 학습 항목을 표시합니다.
 
 ---
 
-## 10. AI 담임 메시지와 조율 제안
+## 13. AI 담임 메시지와 조율 제안
 
 ```text
 POST /api/conversations/:conversationId/messages
@@ -393,7 +550,7 @@ POST /api/conversations/:conversationId/messages
 
 ```json
 {
-  "studentId": "frontend-demo",
+  "studentId": "000",
   "message": "오늘 시간이 부족하고 복습 위주로 하고 싶어요."
 }
 ```
@@ -445,7 +602,7 @@ curl -sS -X POST "$API_BASE_URL/api/conversations/frontend-conversation/messages
 
 ---
 
-## 11. 조율 제안 확정
+## 14. 조율 제안 확정
 
 ```text
 POST /api/session-adjustments/:adjustmentId/confirm
@@ -457,7 +614,7 @@ POST /api/session-adjustments/:adjustmentId/confirm
 
 ```json
 {
-  "studentId": "frontend-demo"
+  "studentId": "000"
 }
 ```
 
@@ -467,7 +624,7 @@ curl -sS -X POST "$API_BASE_URL/api/session-adjustments/adjustment-id/confirm" \
   -d "{\"studentId\":\"$STUDENT_ID\"}"
 ```
 
-요청 본문은 빈 객체 `{}`도 허용하며, 이 경우 `demo-student` 상태에 대해서만 확정합니다. `studentId`를 대화 요청에 보냈다면 반드시 같은 값을 다시 보내야 합니다.
+요청 본문은 빈 객체 `{}`도 허용하며, 이 경우 `000` 상태에 대해서만 확정합니다. `studentId`를 대화 요청에 보냈다면 반드시 같은 값을 다시 보내야 합니다.
 
 성공 응답은 `adjustmentId`, `confirmed: true`, `studentContext`, `session`, `curriculumMap`, `teacherNote`를 포함합니다. 존재하지 않거나 다른 `studentId`에 속한 `adjustmentId`는 `404`를 반환하며, 확정된 제안 ID는 다시 사용할 수 없습니다.
 
@@ -483,3 +640,23 @@ curl -sS -X POST "$API_BASE_URL/api/session-adjustments/adjustment-id/confirm" \
 ```
 
 API 요청 실패 시에는 연결 오류와 재시도 UI만 표시합니다. 프론트의 기존 mock 규칙으로 수업·진도·다음 추천을 대체 계산하지 않습니다.
+
+## 15. 커리큘럼 도구 실행
+
+```text
+POST /api/curriculum-tools/execute
+```
+
+LLM 또는 클라이언트가 규칙 기반 커리큘럼 도구를 실행할 때 사용합니다. 현재 `create_curriculum_plan`, `compress_curriculum_plan`, `extend_curriculum_plan`, `assess_curriculum_deadline`, `apply_curriculum_plan`을 지원합니다.
+
+`planProfile`은 `stable`, `compressed`, `practice` 중 하나입니다. 초기 버전은 어떤 값을 요청해도 `result.appliedPlanProfile: "baseline"`과 같은 기준 커리큘럼을 반환합니다.
+
+정확한 요청·응답 계약과 mock LLM 연동 규칙은 [curriculum-tool-api.md](./curriculum-tool-api.md)를 참고합니다.
+
+## 16. 적용된 커리큘럼 계획 조회
+
+```text
+GET /api/curriculum-plans/current?studentId={studentId}
+```
+
+`apply_curriculum_plan`으로 mock 상태에 보관한 계획을 반환합니다. 아직 적용 계획이 없으면 `404`를 반환합니다.

@@ -1,9 +1,20 @@
 import type { CurriculumDefinition, LessonItem } from "./progress.types.js";
 
-function lesson(item: Omit<LessonItem, "playbackTargetId">): LessonItem {
+function lesson(item: Omit<LessonItem, "playbackTargetId" | "mockPlayback">): LessonItem {
   return {
     ...item,
     playbackTargetId: item.kind === "lecture" ? `mock-video:${item.id}` : undefined,
+    mockPlayback:
+      item.kind === "lecture"
+        ? {
+            kind: "mock-video",
+            targetId: `mock-video:${item.id}`,
+            mediaType: "image",
+            contentType: "image/png",
+            assetKey: "mock-logarithm-lecture",
+            durationSeconds: item.estimatedMinutes * 60,
+          }
+        : undefined,
   };
 }
 

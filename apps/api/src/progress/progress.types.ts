@@ -2,6 +2,15 @@ export type CurriculumId = "stable-log" | "compressed-log" | "practice-log";
 
 export type LessonItemKind = "lecture" | "review" | "practice" | "check";
 
+export type MockLessonPlayback = {
+  kind: "mock-video";
+  targetId: string;
+  mediaType: "image";
+  contentType: "image/png";
+  assetKey: "mock-logarithm-lecture";
+  durationSeconds: number;
+};
+
 export type LessonItem = {
   id: string;
   kind: LessonItemKind;
@@ -12,6 +21,7 @@ export type LessonItem = {
   required: boolean;
   reason: string;
   playbackTargetId?: string;
+  mockPlayback?: MockLessonPlayback;
 };
 
 export type CurriculumStep = {
@@ -48,6 +58,7 @@ export type StudentContext = {
   completedLessonItemIds: string[];
   lowFocusRecorded: boolean;
   maxSessionMinutes: number;
+  deferredLessonItemIds: string[];
 };
 
 export type StudentRequestKind =
@@ -69,6 +80,32 @@ export type TodaySession = {
   teacherComment: string;
 };
 
+export type RecommendedLearningAction =
+  | "play-lesson"
+  | "open-review"
+  | "start-practice"
+  | "start-check";
+
+export type NextRecommendedItem = {
+  id: string;
+  kind: LessonItemKind;
+  title: string;
+  action: RecommendedLearningAction;
+  playbackAvailable: boolean;
+};
+
+export type TodaySessionProgress = {
+  sessionId: string;
+  completedItemIds: string[];
+  completedItemCount: number;
+  totalItemCount: number;
+  progressPercent: number;
+  completedItems: LessonItem[];
+  carryOverItems: LessonItem[];
+  isCompleted: boolean;
+  nextRecommendedItem: NextRecommendedItem | null;
+  teacherReport: string;
+};
 export type LessonFeedbackResult = {
   responseType: "mock";
   lessonId: string;
@@ -81,7 +118,7 @@ export type LessonFeedbackResult = {
   weakConcepts: string[];
   reasonCodes: string[];
   teacherNote: string;
-  progress: Record<string, unknown>;
+  progress: TodaySessionProgress;
 };
 
 export type ProgressService = {
@@ -91,6 +128,7 @@ export type ProgressService = {
   getTodaySession(studentId: string): TodaySession;
   getCurriculumMap(studentId: string): Record<string, unknown>;
   getLessonItem(studentId: string, lessonItemId: string): Record<string, unknown> | undefined;
+  getLessonPlayback(studentId: string, lessonItemId: string): MockLessonPlayback | undefined;
   createAdjustmentProposal(
     studentId: string,
     message: string,
@@ -102,5 +140,13 @@ export type ProgressService = {
     understandingLevel: number,
     focusLevel: number,
   ): LessonFeedbackResult | undefined;
-  getTodaySessionProgress(studentId: string): Record<string, unknown>;
+  getTodaySessionProgress(studentId: string): TodaySessionProgress;
+  applyCurriculumPlan(studentId: string, plan: CurriculumDefinition): Record<string, unknown>;
+  insertRemediation(studentId: string, input: { concept?: string; estimatedMinutes?: number }): Record<string, unknown> | undefined;
+  deferLessonItem(studentId: string, lessonItemId?: string): Record<string, unknown> | undefined;
+  assessScheduleImpact(
+    studentId: string,
+    input: { availableMinutesPerDay?: number; targetDays?: number },
+  ): Record<string, unknown>;
+  getRevision(studentId: string): number;
 };

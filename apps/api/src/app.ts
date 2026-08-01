@@ -1,4 +1,21 @@
 import Fastify from "fastify";
+import { createFileCourseCatalogRepository } from "./course-catalog/course-catalog.file-repository.js";
+import type { CourseCatalogRepository } from "./course-catalog/course-catalog.types.js";
+import { createCurriculumRecommendationService } from "./curriculum-recommendation/curriculum-recommendation.service.js";
+import type {
+  CurriculumRecommendationInput,
+  CurriculumRecommendationService,
+} from "./curriculum-recommendation/curriculum-recommendation.types.js";
+import { createCurriculumToolService } from "./curriculum-tools/curriculum-tool.service.js";
+import {
+  curriculumToolNames,
+  type CurriculumToolInput,
+  type CurriculumToolName,
+  type CurriculumToolService,
+} from "./curriculum-tools/curriculum-tool.types.js";
+import { createProgressToolService } from "./progress-tools/progress-tool.service.js";
+import { progressToolNames, type ProgressToolInput, type ProgressToolName, type ProgressToolService } from "./progress-tools/progress-tool.types.js";
+import { readMockLessonPlaybackAsset } from "./lesson-playback/mock-lesson-playback.service.js";
 import { createMockProgressService } from "./progress/progress.mock-service.js";
 import type { ProgressService } from "./progress/progress.types.js";
 import { createTeacherLlmService } from "./teacher-llm/teacher-llm.service.js";
@@ -44,6 +61,93 @@ const curriculumSelectionRequestSchema = {
   additionalProperties: false,
 } as const;
 
+const curriculumRecommendationRequestSchema = {
+  type: "object",
+  properties: {
+    courseId: { type: "string", minLength: 1 },
+    subjectArea: { type: "string", minLength: 1 },
+    unitNames: {
+      type: "array",
+      items: { type: "string", minLength: 1 },
+      maxItems: 50,
+    },
+    completedLessonIds: {
+      type: "array",
+      items: { type: "string", minLength: 1 },
+      maxItems: 500,
+    },
+    weakUnitNames: {
+      type: "array",
+      items: { type: "string", minLength: 1 },
+      maxItems: 50,
+    },
+    availableMinutesPerDay: { type: "integer", minimum: 1, maximum: 720 },
+    targetDays: { type: "integer", minimum: 1, maximum: 3650 },
+  },
+  additionalProperties: false,
+} as const;
+
+const curriculumToolRequestSchema = {
+  type: "object",
+  required: ["tool"],
+  properties: {
+    tool: { type: "string", enum: curriculumToolNames },
+    input: {
+      type: "object",
+      properties: {
+        studentId: { type: "string", minLength: 1, maxLength: 100 },
+        courseId: { type: "string", minLength: 1 },
+        subjectArea: { type: "string", minLength: 1 },
+        unitNames: { type: "array", items: { type: "string", minLength: 1 }, maxItems: 50 },
+        completedLessonIds: { type: "array", items: { type: "string", minLength: 1 }, maxItems: 500 },
+        weakUnitNames: { type: "array", items: { type: "string", minLength: 1 }, maxItems: 50 },
+        availableMinutesPerDay: { type: "integer", minimum: 1, maximum: 720 },
+        targetDays: { type: "integer", minimum: 1, maximum: 3650 },
+        planProfile: { type: "string", enum: ["stable", "compressed", "practice"] },
+      },
+      additionalProperties: false,
+    },
+  },
+  additionalProperties: false,
+} as const;
+
+const progressToolRequestSchema = {
+  type: "object",
+  required: ["tool"],
+  properties: {
+    tool: { type: "string", enum: progressToolNames },
+    input: {
+      type: "object",
+      properties: {
+        studentId: { type: "string", minLength: 1, maxLength: 100 },
+        concept: { type: "string", minLength: 1, maxLength: 200 },
+        lessonItemId: { type: "string", minLength: 1, maxLength: 200 },
+        estimatedMinutes: { type: "integer", minimum: 1, maximum: 180 },
+        availableMinutesPerDay: { type: "integer", minimum: 1, maximum: 720 },
+        targetDays: { type: "integer", minimum: 1, maximum: 3650 },
+      },
+      additionalProperties: false,
+    },
+  },
+  additionalProperties: false,
+} as const;
+const studentQuerySchema = {
+  type: "object",
+  properties: {
+    studentId: { type: "string", minLength: 1, maxLength: 100 },
+  },
+  additionalProperties: false,
+} as const;
+
+const lessonItemParamsSchema = {
+  type: "object",
+  required: ["lessonItemId"],
+  properties: {
+    lessonItemId: { type: "string", minLength: 1, maxLength: 200, pattern: "^[a-z0-9][a-z0-9-]*$" },
+  },
+  additionalProperties: false,
+} as const;
+
 type TeacherMessageRequest = {
   studentId?: string;
   message: string;
@@ -61,6 +165,10 @@ type CurriculumSelectionRequest = {
   curriculumId: string;
 };
 
+type CurriculumRecommendationRequest = CurriculumRecommendationInput;
+type CurriculumToolApiRequest = { tool: CurriculumToolName; input?: CurriculumToolInput };
+type ProgressToolApiRequest = { tool: ProgressToolName; input?: ProgressToolInput };
+
 type StudentQuery = {
   studentId?: string;
 };
@@ -72,13 +180,33 @@ type AdjustmentConfirmationRequest = {
 type AppDependencies = {
   teacherLlmService?: TeacherLlmService;
   progressService?: ProgressService;
+  courseCatalogRepository?: CourseCatalogRepository;
+  curriculumRecommendationService?: CurriculumRecommendationService;
+  curriculumToolService?: CurriculumToolService;
+  progressToolService?: ProgressToolService;
 };
 
 export function buildApp({
   teacherLlmService = createTeacherLlmService(),
   progressService = createMockProgressService(),
+  courseCatalogRepository = createFileCourseCatalogRepository(),
+  curriculumRecommendationService,
+  curriculumToolService,
+  progressToolService,
 }: AppDependencies = {}) {
   const app = Fastify({ logger: true });
+  const recommendationService =
+    curriculumRecommendationService ?? createCurriculumRecommendationService(courseCatalogRepository);
+  const toolService = curriculumToolService ?? createCurriculumToolService(recommendationService, progressService);
+  const progressTools = progressToolService ?? createProgressToolService(progressService);
+  const createLearningSnapshot = (studentId: string) => ({
+    revision: progressService.getRevision(studentId),
+    studentContext: progressService.getStudentContext(studentId),
+    curriculumPlan: toolService.getAppliedPlan(studentId)?.recommendation ?? null,
+    todaySession: progressService.getTodaySession(studentId),
+    curriculumMap: progressService.getCurriculumMap(studentId),
+    progress: progressService.getTodaySessionProgress(studentId),
+  });
 
   app.get("/api/health", async () => ({
     status: "ok",
@@ -86,6 +214,100 @@ export function buildApp({
     dataSource: "mock",
   }));
 
+  app.get("/api/course-catalogs", async () => ({
+    dataSource: "mock",
+    catalogDataSource: "file",
+    courses: courseCatalogRepository.listCourses(),
+  }));
+
+  app.get<{ Params: { courseId: string } }>("/api/course-catalogs/:courseId", async (request, reply) => {
+    const courseCatalog = courseCatalogRepository.getCourseCatalog(request.params.courseId);
+
+    if (!courseCatalog) {
+      return reply.code(404).send({ message: "강좌 카탈로그를 찾을 수 없습니다." });
+    }
+
+    return {
+      dataSource: "mock",
+      catalogDataSource: "file",
+      courseCatalog,
+    };
+  });
+
+  app.post<{ Body: CurriculumRecommendationRequest }>(
+    "/api/curriculum-recommendations",
+    { schema: { body: curriculumRecommendationRequestSchema } },
+    async (request, reply) => {
+      const result = recommendationService.recommend(request.body);
+
+      if (result.kind === "course-not-found") {
+        return reply.code(404).send({ message: "추천할 강좌 카탈로그를 찾을 수 없습니다." });
+      }
+
+      if (result.kind === "no-matching-lessons") {
+        return reply.code(422).send({ message: "추천 조건에 맞는 미완료 강의가 없습니다." });
+      }
+
+      return {
+        dataSource: "mock",
+        catalogDataSource: "file",
+        recommendation: result.recommendation,
+      };
+    },
+  );
+
+  app.post<{ Body: CurriculumToolApiRequest }>(
+    "/api/curriculum-tools/execute",
+    { schema: { body: curriculumToolRequestSchema } },
+    async (request, reply) => {
+      const result = toolService.execute({ tool: request.body.tool, input: request.body.input ?? {} });
+
+      if (result.kind === "course-not-found") {
+        return reply.code(404).send({ message: "추천할 강의 카탈로그를 찾을 수 없습니다." });
+      }
+
+      if (result.kind === "no-matching-lessons") {
+        return reply.code(422).send({ message: "도구 실행 조건에 맞는 미완료 강의가 없습니다." });
+      }
+
+      const studentId = getStudentId(request.body.input?.studentId);
+      return {
+        dataSource: "mock",
+        catalogDataSource: "file",
+        result: result.result,
+        snapshot: request.body.tool === "apply_curriculum_plan" ? createLearningSnapshot(studentId) : null,
+      };
+    },
+  );
+
+  app.get<{ Querystring: StudentQuery }>("/api/curriculum-plans/current", async (request, reply) => {
+    const plan = toolService.getAppliedPlan(getStudentId(request.query.studentId));
+
+    if (!plan) {
+      return reply.code(404).send({ message: "아직 적용된 커리큘럼 계획이 없습니다." });
+    }
+
+    return { dataSource: "mock", plan };
+  });
+
+  app.post<{ Body: ProgressToolApiRequest }>(
+    "/api/progress-tools/execute",
+    { schema: { body: progressToolRequestSchema } },
+    async (request, reply) => {
+      const result = progressTools.execute({ tool: request.body.tool, input: request.body.input ?? {} });
+      if (result.kind === "not-found") return reply.code(404).send({ message: "조정할 현재 학습 항목을 찾을 수 없습니다." });
+      const studentId = getStudentId(request.body.input?.studentId);
+      return {
+        dataSource: "mock",
+        result: result.result,
+        snapshot: request.body.tool === "assess_schedule_impact" ? null : createLearningSnapshot(studentId),
+      };
+    },
+  );
+  app.get<{ Querystring: StudentQuery }>("/api/learning-snapshot", async (request) => {
+    const studentId = getStudentId(request.query.studentId);
+    return { dataSource: "mock", snapshot: createLearningSnapshot(studentId) };
+  });
   app.get<{ Querystring: StudentQuery }>("/api/curriculums", async (request) => ({
     dataSource: "mock",
     curriculums: progressService.listCurriculums(getStudentId(request.query.studentId)),
@@ -133,6 +355,7 @@ export function buildApp({
 
   app.get<{ Params: { lessonItemId: string }; Querystring: StudentQuery }>(
     "/api/lesson-items/:lessonItemId",
+    { schema: { params: lessonItemParamsSchema, querystring: studentQuerySchema } },
     async (request, reply) => {
       const lessonItem = progressService.getLessonItem(
         getStudentId(request.query.studentId),
@@ -147,6 +370,35 @@ export function buildApp({
     },
   );
 
+  app.get<{ Params: { lessonItemId: string }; Querystring: StudentQuery }>(
+    "/api/lesson-items/:lessonItemId/playback",
+    { schema: { params: lessonItemParamsSchema, querystring: studentQuerySchema } },
+    async (request, reply) => {
+      const playback = progressService.getLessonPlayback(
+        getStudentId(request.query.studentId),
+        request.params.lessonItemId,
+      );
+
+      if (!playback) {
+        return reply.code(404).send({ message: "현재 커리큘럼에서 재생 가능한 강의 항목을 찾을 수 없습니다." });
+      }
+
+      try {
+        const media = readMockLessonPlaybackAsset(playback.assetKey);
+
+        if (!media) {
+          request.log.error({ assetKey: playback.assetKey }, "등록되지 않은 강의 mock 미디어 자산입니다.");
+          return reply.code(500).send({ message: "강의 재생 리소스를 준비하지 못했습니다." });
+        }
+
+        return reply.type(playback.contentType).send(media);
+      } catch {
+        request.log.error({ assetKey: playback.assetKey }, "강의 mock 미디어를 읽지 못했습니다.");
+        return reply.code(500).send({ message: "강의 재생 리소스를 준비하지 못했습니다." });
+      }
+    },
+  );
+
   app.post<{ Params: { conversationId: string }; Body: TeacherMessageRequest }>(
     "/api/conversations/:conversationId/messages",
     { schema: { body: messageRequestSchema } },
@@ -157,6 +409,10 @@ export function buildApp({
         conversationId: request.params.conversationId,
         message: request.body.message,
       });
+      const requestedCurriculumTool = llmResponse.requestedTools.find(isCurriculumToolName);
+      const toolResult = requestedCurriculumTool
+        ? toolService.execute({ tool: requestedCurriculumTool, input: { studentId } })
+        : undefined;
 
       return {
         dataSource: "mock",
@@ -165,6 +421,10 @@ export function buildApp({
         attachment: adjustmentProposal
           ? { type: "session-adjustment", data: adjustmentProposal }
           : null,
+        toolCalls:
+          toolResult?.kind === "success"
+            ? [{ name: requestedCurriculumTool, result: toolResult.result }]
+            : [],
       };
     },
   );
@@ -212,5 +472,9 @@ export function buildApp({
 }
 
 function getStudentId(studentId: string | undefined): string {
-  return studentId?.trim() || "demo-student";
+  return studentId?.trim() || "000";
+}
+
+function isCurriculumToolName(tool: string): tool is CurriculumToolName {
+  return curriculumToolNames.includes(tool as CurriculumToolName);
 }
