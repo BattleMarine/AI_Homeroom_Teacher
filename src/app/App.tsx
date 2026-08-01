@@ -14,6 +14,7 @@ import {
   sendTeacherMessage,
   type ApiCurriculumSummary,
   type ApiLessonItem,
+  type ApiLessonItemDetail,
   type ApiSessionAdjustment,
   type ApiStudentContext,
   type ApiTodaySessionProgress,
@@ -21,18 +22,12 @@ import {
   TeacherApiRequestError,
   type TodaySessionApiResponse,
 } from "../api/teacher-api";
-import { type CurriculumId, type CurriculumProgressStatus } from "../features/curriculum";
+import { type CurriculumProgressStatus } from "../features/curriculum";
 import {
   type LessonFeedback,
   type LearningCheckLevel,
-  type LearningCheckSubmission,
 } from "../features/learning-check";
-import {
-  applyStudentRequestToProgress,
-  generateTodaySession,
-  type StudentRequestKind,
-} from "../features/progress-orchestrator";
-import { createDemoSessionData } from "../mock/demo-session.data";
+import { type StudentRequestKind } from "../features/progress-orchestrator";
 import type { LessonItem, LessonItemKind } from "../types/shared.types";
 import type { DemoStep } from "./demo-flow.types";
 import { readDemoStorageState, saveDemoStorageState } from "./demo-storage";
@@ -162,6 +157,31 @@ function toLessonItem(item: ApiLessonItem): LessonItem {
   };
 }
 
+function formatPlaybackDuration(durationSeconds: number) {
+  const minutes = Math.floor(durationSeconds / 60);
+  const seconds = durationSeconds % 60;
+
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
+function isPlayableRecommendedItem(item: ApiLessonItemDetail) {
+  return item.kind === "lecture" && item.playback !== null;
+}
+
+function getRecommendedItemActionLabel(item: Pick<ApiLessonItem, "kind">) {
+  switch (item.kind) {
+    case "review":
+      return "보강 시작";
+    case "practice":
+      return "문제 풀기";
+    case "check":
+      return "확인 시작";
+    case "lecture":
+    default:
+      return "강의 재생";
+  }
+}
+
 function getApiErrorMessage(
   error: unknown,
   context: "initial-load" | "lesson-feedback",
@@ -169,7 +189,7 @@ function getApiErrorMessage(
   const fallbackMessage =
     context === "lesson-feedback"
       ? "AI 담임 API에 연결하지 못했습니다. 강의별 체크를 다시 전달해 주세요."
-      : "AI 담임 API에 연결하지 못했습니다. 현재 화면은 기존 데모 데이터로 표시합니다.";
+      : "AI 담임 API에 연결하지 못했습니다. 마지막으로 받은 수업 정보를 유지합니다. 잠시 후 다시 시도해 주세요.";
 
   if (!(error instanceof TeacherApiRequestError)) {
     return fallbackMessage;
@@ -304,63 +324,9 @@ const immediateFocusOptions: Array<{
   { level: 5, label: "집중했어요" },
 ];
 
-function createFeedbackBasedLearningCheckSubmission(
-  todaySession: { date: string; items: LessonItem[] },
-  lessonFeedbacks: LessonFeedback[],
-): LearningCheckSubmission {
-  const relevantFeedbacks = lessonFeedbacks.filter((feedback) =>
-    todaySession.items.some((item) => item.id === feedback.lessonItemId),
-  );
-  const averageLevel = (
-    field: "understandingLevel" | "focusLevel",
-  ): LearningCheckLevel => {
-    if (relevantFeedbacks.length === 0) {
-      return 3;
-    }
-
-    const total = relevantFeedbacks.reduce((sum, feedback) => sum + feedback[field], 0);
-    return Math.min(5, Math.max(1, Math.round(total / relevantFeedbacks.length))) as LearningCheckLevel;
-  };
-  const algorithmDetectedConcepts = relevantFeedbacks
-    .filter((feedback) => feedback.understandingLevel <= 2)
-    .flatMap((feedback) => feedback.conceptTags);
-  const completedLectureIds = new Set(
-    relevantFeedbacks.map((feedback) => feedback.lessonItemId),
-  );
-  const completedItemIds = todaySession.items
-    .filter(
-      (item) => item.kind !== "lecture" || completedLectureIds.has(item.id),
-    )
-    .map((item) => item.id);
-
-  return {
-    sessionDate: todaySession.date,
-    completedItemIds,
-    skippedItemIds: todaySession.items
-      .filter((item) => !completedItemIds.includes(item.id))
-      .map((item) => item.id),
-    understandingLevel: averageLevel("understandingLevel"),
-    focusLevel: averageLevel("focusLevel"),
-    confusedConcepts: [...new Set(algorithmDetectedConcepts)],
-    problemResult: {
-      correctCount: 0,
-      totalCount: 0,
-    },
-  };
-}
-
 export function App() {
   const [initialDemoStorageState] = useState(() => readDemoStorageState());
-  const [selectedCurriculumId, setSelectedCurriculumId] =
-    useState<string | null>(null);
-  const [learningCheckSubmission, setLearningCheckSubmission] =
-    useState<LearningCheckSubmission | null>(
-      () => initialDemoStorageState?.learningCheckSubmission ?? null,
-    );
-  const [studentRequestKind, setStudentRequestKind] =
-    useState<StudentRequestKind>(
-      () => initialDemoStorageState?.studentRequestKind ?? "default",
-    );
+  const [selectedCurriculumId, setSelectedCurriculumId] = useState<string | null>(null);
   const [currentDemoStep, setCurrentDemoStep] = useState<DemoStep>(
     () => initialDemoStorageState?.currentDemoStep ?? "intro",
   );
@@ -382,13 +348,11 @@ export function App() {
   const [pendingSessionAdjustment, setPendingSessionAdjustment] =
     useState<ApiSessionAdjustment | null>(null);
   const [isSessionAdjustmentConfirming, setIsSessionAdjustmentConfirming] = useState(false);
-  const [activeLesson, setActiveLesson] = useState<LessonItem | null>(null);
+  const [activeLesson, setActiveLesson] = useState<ApiLessonItemDetail | null>(null);
   const [isMockLessonPlaying, setIsMockLessonPlaying] = useState(false);
   const [isLessonFeedbackSubmitting, setIsLessonFeedbackSubmitting] = useState(false);
   const [lessonFeedbackError, setLessonFeedbackError] = useState<string | null>(null);
-  const [lessonFeedbacks, setLessonFeedbacks] = useState<LessonFeedback[]>(
-    () => initialDemoStorageState?.lessonFeedbacks ?? [],
-  );
+  const [recommendedLesson, setRecommendedLesson] = useState<ApiLessonItemDetail | null>(null);
   const chatMessageIdRef = useRef(0);
   const conversationThreadRef = useRef<HTMLDivElement | null>(null);
   const nextLessonCountdownIntervalRef = useRef<number | null>(null);
@@ -406,47 +370,14 @@ export function App() {
       id: "assistant-initial",
       role: "assistant",
       text:
-        initialDemoStorageState?.selectedCurriculumId === null ||
-        initialDemoStorageState?.selectedCurriculumId === undefined
-          ? "아직 선택된 커리큘럼이 없습니다. 먼저 학습 흐름을 정하면, 그 기준으로 오늘 수업을 바로 편성하겠습니다."
-          : "선택한 커리큘럼을 기준으로 오늘 수업을 편성할 준비가 되었습니다. 현재 상황이나 원하는 학습 방식을 말해 주세요.",
+        "AI 담임 API에서 현재 학습 상태를 불러오고 있습니다. 현재 상황이나 원하는 학습 방식을 말해 주세요.",
       attachmentStep: getVisibleAttachmentStep(
         initialDemoStorageState?.currentDemoStep ?? "intro",
       ),
     },
   ]);
 
-  const selectedCurriculumIdForData = (selectedCurriculumId ?? "stable-log") as CurriculumId;
   const hasSelectedCurriculum = selectedCurriculumId !== null;
-  const { demoCurriculum, demoStudentState } = useMemo(
-    () => createDemoSessionData(selectedCurriculumIdForData),
-    [selectedCurriculumIdForData],
-  );
-  const currentStepConcepts = useMemo(
-    () =>
-      demoCurriculum.steps.find((step) => step.id === demoStudentState.currentStepId)
-        ?.conceptTags ?? [],
-    [demoCurriculum.steps, demoStudentState.currentStepId],
-  );
-  const studentRequestAdjustment = useMemo(
-    () =>
-      applyStudentRequestToProgress({
-        studentState: demoStudentState,
-        requestKind: studentRequestKind,
-        focusConcept: demoStudentState.weakConcepts[0],
-        currentStepConcepts,
-      }),
-    [currentStepConcepts, demoStudentState, studentRequestKind],
-  );
-  const adjustedStudentState = studentRequestAdjustment.adjustedStudentState;
-  const demoTodaySession = useMemo(
-    () =>
-      generateTodaySession({
-        studentState: adjustedStudentState,
-        maxMinutes: studentRequestAdjustment.maxMinutes,
-      }),
-    [adjustedStudentState, studentRequestAdjustment.maxMinutes],
-  );
   const apiTodaySessionSummary = useMemo(
     () =>
       apiTodaySession
@@ -461,23 +392,6 @@ export function App() {
 
     return apiCurriculumMap.curriculumMap.steps;
   }, [apiCurriculumMap]);
-  const defaultLearningCheckSubmission = useMemo(
-    () =>
-      createFeedbackBasedLearningCheckSubmission(
-        demoTodaySession,
-        lessonFeedbacks,
-      ),
-    [demoTodaySession, lessonFeedbacks],
-  );
-
-  useEffect(() => {
-    if (learningCheckSubmission === null) {
-      setLearningCheckSubmission(defaultLearningCheckSubmission);
-    }
-  }, [defaultLearningCheckSubmission, learningCheckSubmission]);
-
-  const activeLearningCheckSubmission =
-    learningCheckSubmission ?? defaultLearningCheckSubmission;
 
   useEffect(() => {
     let isCancelled = false;
@@ -535,20 +449,8 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    saveDemoStorageState({
-      selectedCurriculumId,
-      studentRequestKind,
-      learningCheckSubmission: activeLearningCheckSubmission,
-      lessonFeedbacks,
-      currentDemoStep,
-    });
-  }, [
-    activeLearningCheckSubmission,
-    currentDemoStep,
-    lessonFeedbacks,
-    selectedCurriculumId,
-    studentRequestKind,
-  ]);
+    saveDemoStorageState({ currentDemoStep });
+  }, [currentDemoStep]);
 
   useEffect(() => {
     const threadElement = conversationThreadRef.current;
@@ -597,18 +499,6 @@ export function App() {
     return step;
   }
 
-  function createTodaySessionSummary(
-    session: Pick<TodaySessionSummary, "goal" | "estimatedMinutes" | "items">,
-  ): TodaySessionSummary {
-    return {
-      goal: session.goal,
-      estimatedMinutes: session.estimatedMinutes,
-      items: session.items.map((item) => ({
-        ...item,
-        conceptTags: [...item.conceptTags],
-      })),
-    };
-  }
 
   function getDisplayedTodaySessionSummary() {
     return (
@@ -678,55 +568,6 @@ export function App() {
     };
   }
 
-  function createLearningProgressReport(
-    feedbacks: LessonFeedback[] = lessonFeedbacks,
-    apiTeacherNote?: string,
-  ): LearningProgressReport {
-    const latestFeedback = feedbacks[feedbacks.length - 1];
-    const lectureItemIds = new Set(
-      demoTodaySession.items
-        .filter((item) => item.kind === "lecture")
-        .map((item) => item.id),
-    );
-    const completedLectureCount = feedbacks.filter((feedback) =>
-      lectureItemIds.has(feedback.lessonItemId),
-    ).length;
-    const understandingLevel = latestFeedback?.understandingLevel ?? 3;
-    const focusLevel = latestFeedback?.focusLevel ?? 3;
-    const recommendedNextLesson = getRecommendedNextLesson(feedbacks);
-    const teacherNote =
-      apiTeacherNote ??
-      (understandingLevel <= 2
-        ? "이 강의의 핵심 개념을 다음 수업 전에 짧게 다시 확인하도록 내부 반영했습니다."
-        : focusLevel <= 2
-          ? "다음 수업의 분량을 가볍게 조율하도록 내부 반영했습니다."
-          : "현재 응답을 바탕으로 다음 수업의 흐름을 내부적으로 조율합니다.");
-
-    return {
-      completedLessonTitle: latestFeedback?.lessonTitle ?? "아직 완료한 강의가 없습니다.",
-      completedLectureCount,
-      totalLectureCount: lectureItemIds.size,
-      recommendedNextLessonId: recommendedNextLesson?.id,
-      recommendedNextLessonTitle: recommendedNextLesson?.title,
-      understandingLevel,
-      focusLevel,
-      teacherNote,
-    };
-  }
-
-  function getRecommendedNextLesson(
-    feedbacks: LessonFeedback[] = lessonFeedbacks,
-  ): LessonItem | null {
-    const completedLessonIds = new Set(
-      feedbacks.map((feedback) => feedback.lessonItemId),
-    );
-
-    return (
-      demoTodaySession.items.find(
-        (item) => item.kind === "lecture" && !completedLessonIds.has(item.id),
-      ) ?? null
-    );
-  }
 
   function appendAssistantMessage(
     step: DemoStep,
@@ -749,7 +590,7 @@ export function App() {
             : undefined,
         learningProgressReport:
           attachmentStep === "progress-report"
-            ? (learningProgressReport ?? createLearningProgressReport())
+            ? learningProgressReport
             : undefined,
       },
     ]);
@@ -824,7 +665,7 @@ export function App() {
                 : undefined,
             learningProgressReport:
               attachmentStep === "progress-report"
-                ? (learningProgressReport ?? createLearningProgressReport())
+                ? learningProgressReport
                 : undefined,
             sessionAdjustment,
           },
@@ -906,18 +747,6 @@ export function App() {
     openMockLesson(lesson);
   }
 
-  function playLessonFromProgressReport(lesson: LessonItem) {
-    if (nextLessonCountdown !== null) {
-      clearNextLessonCountdownTimers();
-      updateNextLessonCountdownMessage(
-        nextLessonCountdown.messageId,
-        `'${nextLessonCountdown.lesson.title}' 자동 재생을 멈추고 선택한 강의를 재생합니다.`,
-      );
-      setNextLessonCountdown(null);
-    }
-
-    openMockLesson(lesson);
-  }
 
   function beginNextLessonCountdown(nextLesson: LessonItem) {
     clearNextLessonCountdownTimers();
@@ -980,10 +809,7 @@ export function App() {
 
   function resetDemoFlow() {
     clearNextLessonCountdownTimers();
-    setSelectedCurriculumId(null);
-    setStudentRequestKind("default");
-    setLearningCheckSubmission(null);
-    setLessonFeedbacks([]);
+    setRecommendedLesson(null);
     setHomeDraftMessage("");
     setIsAssistantPreparing(false);
     setNextLessonCountdown(null);
@@ -1003,89 +829,36 @@ export function App() {
     setCurrentDemoStep("intro");
   }
 
-  function handleSelectCurriculum(curriculumId: CurriculumId) {
-    setSelectedCurriculumId(curriculumId);
-    setStudentRequestKind("default");
-    setLearningCheckSubmission(null);
-    setLessonFeedbacks([]);
-    setCurrentDemoStep("today");
-  }
-
-  function applyStudentRequest(requestKind: StudentRequestKind) {
-    setStudentRequestKind(requestKind);
-    setLearningCheckSubmission(null);
-  }
-
-  function handleSelectCurriculumFromChat(curriculumId: CurriculumId) {
-    const selectedCurriculum = apiCurriculums.find(
-      (curriculum) => curriculum.id === curriculumId,
-    );
-    const { demoStudentState: studentState } = createDemoSessionData(curriculumId);
-    const todaySession = generateTodaySession({ studentState });
-
-    sendUserMessageAndPrepareResponse({
-      message: `${selectedCurriculum?.title ?? "선택한 커리큘럼"}으로 시작할게요.`,
-      nextStep: "today",
-      assistantText: createTodaySessionProposalMessage(
-        todaySession,
-        "좋습니다. 선택한 커리큘럼을 기준으로 오늘 수업을 편성했습니다.",
-      ),
-      todaySessionSummary: createTodaySessionSummary(todaySession),
-      action: () => handleSelectCurriculum(curriculumId),
-      requestTeacherMessage: true,
-    });
-  }
 
   function handleStudentRequestFromChat(requestKind: StudentRequestKind) {
     const selectedRequest = studentRequestOptions.find(
       (requestOption) => requestOption.kind === requestKind,
     );
 
-    sendStudentRequestProposal(
-      selectedRequest?.label ?? "오늘 상황에 맞춰 조정해 주세요.",
-      requestKind,
-      true,
-    );
+    sendStudentRequestProposal(selectedRequest?.label ?? "오늘 상황에 맞춰 조정해 주세요.");
   }
 
-  function sendStudentRequestProposal(
-    message: string,
-    requestKind: StudentRequestKind,
-    requestTeacherMessage = false,
-  ) {
-    const requestAdjustment = applyStudentRequestToProgress({
-      studentState: demoStudentState,
-      requestKind,
-      focusConcept: demoStudentState.weakConcepts[0],
-      currentStepConcepts,
-    });
-    const adjustedTodaySession = generateTodaySession({
-      studentState: requestAdjustment.adjustedStudentState,
-      maxMinutes: requestAdjustment.maxMinutes,
-    });
-
+  function sendStudentRequestProposal(message: string) {
     sendUserMessageAndPrepareResponse({
       message,
       nextStep: "request",
-      assistantText: createTodaySessionProposalMessage(
-        adjustedTodaySession,
-        `${requestAdjustment.summary} 요청을 반영했습니다. ${requestAdjustment.teacherNote}`,
-      ),
-      todaySessionSummary: createTodaySessionSummary(adjustedTodaySession),
-      action: () => applyStudentRequest(requestKind),
-      requestTeacherMessage,
+      requestTeacherMessage: true,
     });
   }
 
   function handleShortTimeRequest() {
-    handleStudentRequestFromChat("short_time");
+    sendStudentRequestProposal("오늘 시간이 부족해요.");
   }
 
   async function openMockLesson(item: LessonItem) {
     setLessonFeedbackError(null);
     try {
       const response = await getLessonItem(demoStudentId, item.id);
-      const lesson = toLessonItem(response.lessonItem);
+      const lesson = response.lessonItem;
+
+      if (lesson.playback === null) {
+        throw new Error("재생 가능한 강의 정보를 찾지 못했습니다.");
+      }
 
       setActiveLesson(lesson);
       setIsMockLessonPlaying(false);
@@ -1096,10 +869,17 @@ export function App() {
         window.history.pushState(null, "", `#lesson-${lesson.id}`);
       }
     } catch (error) {
-      const errorMessage = getApiErrorMessage(error, "initial-load");
+      const errorMessage =
+        error instanceof Error && error.message === "재생 가능한 강의 정보를 찾지 못했습니다."
+          ? "선택한 항목은 영상으로 재생할 수 없습니다. 다른 학습 방식으로 진행해 주세요."
+          : getApiErrorMessage(error, "initial-load");
       setApiConnectionState("error");
       setApiConnectionError(errorMessage);
       setLessonFeedbackError(errorMessage);
+      setChatMessages((currentMessages) => [
+        ...currentMessages,
+        { id: createChatMessageId("assistant"), role: "assistant", text: errorMessage },
+      ]);
     }
   }
 
@@ -1136,44 +916,39 @@ export function App() {
       setApiConnectionError(null);
       setApiSessionProgress(apiResult.progress);
 
-      const recommendedNextLesson = apiResult.progress.nextRecommendedLesson
-        ? toLessonItem(
-            (
-              await getLessonItem(
-                demoStudentId,
-                apiResult.progress.nextRecommendedLesson.id,
-              )
-            ).lessonItem,
-          )
+      const recommendedItem = apiResult.progress.nextRecommendedLesson
+        ? (
+            await getLessonItem(
+              demoStudentId,
+              apiResult.progress.nextRecommendedLesson.id,
+            )
+          ).lessonItem
         : null;
 
       await refreshServerState();
 
-      const nextFeedbacks = [
-        ...lessonFeedbacks.filter((item) => item.lessonItemId !== feedback.lessonItemId),
-        feedback,
-      ];
-
-      setLessonFeedbacks(nextFeedbacks);
-      setLearningCheckSubmission(
-        createFeedbackBasedLearningCheckSubmission(demoTodaySession, nextFeedbacks),
-      );
-      const nextLesson = recommendedNextLesson;
+      const nextLesson =
+        recommendedItem && isPlayableRecommendedItem(recommendedItem)
+          ? toLessonItem(recommendedItem)
+          : null;
+      setRecommendedLesson(recommendedItem);
       closeMockLesson();
       sendUserMessageAndPrepareResponse({
         message: `${feedback.lessonTitle} 학습을 마쳤어요. 이해도와 집중도를 전달할게요.`,
         nextStep: "next-session",
         assistantText:
-          nextLesson === null
-            ? "오늘 편성된 강의를 모두 마쳤어요. 강의별 응답을 반영했고, 다음 수업 조율은 AI 담임이 내부에서 계속 관리하겠습니다."
-            : `강의별 응답을 반영했습니다. 다음으로 '${nextLesson.title}'을 추천할게요. 재생 전 잠깐만 준비할 시간을 드리겠습니다.`,
+          recommendedItem === null
+            ? "오늘 편성된 항목을 모두 마쳤어요. 강의별 응답을 반영했고, 다음 수업 조율은 AI 담임이 내부에서 계속 관리하겠습니다."
+            : nextLesson
+              ? `강의별 응답을 반영했습니다. 다음으로 '${nextLesson.title}'을 추천할게요. 재생 전 잠깐만 준비할 시간을 드리겠습니다.`
+              : `강의별 응답을 반영했습니다. 다음 추천 항목은 '${recommendedItem.title}'입니다. 영상 강의가 아닌 항목이라 자동 재생하지 않습니다.`,
         action: nextLesson === null ? undefined : () => beginNextLessonCountdown(nextLesson),
         learningProgressReport: createLearningProgressReportFromApi({
           completedLesson: apiResult.completedLesson,
           appliedFeedback: apiResult.appliedFeedback,
           teacherNote: apiResult.teacherNote,
           progress: apiResult.progress,
-          recommendedLesson: nextLesson,
+          recommendedLesson: recommendedItem ? toLessonItem(recommendedItem) : null,
         }),
       });
     } catch (error) {
@@ -1203,6 +978,7 @@ export function App() {
       },
     ]);
     setIsAssistantPreparing(true);
+    setRecommendedLesson(null);
 
     void selectCurriculum(demoStudentId, curriculumId)
       .then(async (snapshot) => {
@@ -1280,13 +1056,26 @@ export function App() {
     }
   }
 
-  function startRecommendedLesson(nextLesson: LessonItem) {
+  function startRecommendedLesson(nextLesson: ApiLessonItemDetail) {
+    if (!isPlayableRecommendedItem(nextLesson)) {
+      setChatMessages((currentMessages) => [
+        ...currentMessages,
+        {
+          id: createChatMessageId("assistant"),
+          role: "assistant",
+          text: `'${nextLesson.title}'은(는) ${getRecommendedItemActionLabel(nextLesson)} 항목입니다. 전용 화면은 준비 중이며 영상 재생은 시작하지 않았습니다.`,
+        },
+      ]);
+      return;
+    }
+
+    const lesson = toLessonItem(nextLesson);
     sendUserMessageAndPrepareResponse({
-      message: `${nextLesson.title}을 이어서 볼게요.`,
+      message: `${lesson.title}을 이어서 볼게요.`,
       nextStep: "today",
       assistantText:
         "좋아요. 지금까지의 학습 흐름을 이어서 다음 강의를 열겠습니다. 강의가 끝난 뒤에도 짧게만 체크해 주세요.",
-      action: () => openMockLesson(nextLesson),
+      action: () => openMockLesson(lesson),
     });
   }
 
@@ -1348,7 +1137,7 @@ export function App() {
   }
 
   function createTodaySessionProposalMessage(
-    session: Pick<typeof demoTodaySession, "goal" | "estimatedMinutes" | "items">,
+    session: Pick<TodaySessionSummary, "goal" | "estimatedMinutes" | "items">,
     introduction: string,
   ) {
     const lessonSummary = session.items
@@ -1358,42 +1147,20 @@ export function App() {
     return `${introduction}\n오늘은 '${session.goal}'을 목표로 ${session.estimatedMinutes}분 동안 진행하겠습니다.\n${lessonSummary}\n이 편성으로 진행할까요?`;
   }
 
-  function getMockStudentRequestKind(message: string): StudentRequestKind | null {
-    if (message.includes("시간") || message.includes("부족")) {
-      return "short_time";
-    }
-
-    if (message.includes("복습")) {
-      return "review_first";
-    }
-
-    if (message.includes("헷갈") || message.includes("어려")) {
-      return "confused_concept";
-    }
-
-    if (message.includes("새 강의") || message.includes("새 진도") || message.includes("진도 빼")) {
-      return "reduce_new_lecture";
-    }
-
-    return null;
-  }
 
   function getAssistantMessage(step: DemoStep) {
     switch (step) {
       case "curriculum":
         return "좋습니다. 먼저 학습 흐름을 정해 보겠습니다. 지금 데모에서는 자동 생성 대신 사전 정의된 커리큘럼 중에서 선택합니다.";
       case "today":
-        return hasSelectedCurriculum
+        return apiTodaySession
           ? createTodaySessionProposalMessage(
-              demoTodaySession,
-              "선택한 커리큘럼과 현재 학습 상태를 기준으로 오늘 수업을 편성했습니다.",
+              createApiTodaySessionSummary(apiTodaySession.session),
+              "AI 담임 API가 현재 학습 상태를 기준으로 오늘 수업을 편성했습니다.",
             )
-          : "아직 커리큘럼을 확정하지 않았습니다. 먼저 학습 흐름을 정하면 오늘 수업을 편성해 제안하겠습니다.";
+          : "오늘 수업 정보를 불러오는 중입니다. 잠시 후 다시 확인해 주세요.";
       case "request":
-        return createTodaySessionProposalMessage(
-          demoTodaySession,
-          `${studentRequestAdjustment.summary} 요청을 반영해 오늘 수업을 다시 편성했습니다.`,
-        );
+        return "요청을 AI 담임에 전달했습니다. 조정 제안이 도착하면 내용을 확인한 뒤 적용할 수 있습니다.";
       case "reason":
         return "아래에 오늘 수업을 이렇게 배정한 근거를 정리했습니다. AI 담임은 규칙 기반 진도 운영 결과를 학생에게 설명하는 역할을 합니다.";
       case "learning-check":
@@ -1511,26 +1278,22 @@ export function App() {
           },
         ];
       case "next-session": {
-        const nextLesson = getRecommendedNextLesson();
+        const nextLesson = recommendedLesson;
 
         return [
           ...(nextLesson === null
             ? []
             : [
                 {
-                  label: `다음 강의: ${nextLesson.title}`,
-                  message: `${nextLesson.title}을 이어서 볼게요.`,
+                  label: `${getRecommendedItemActionLabel(nextLesson)}: ${nextLesson.title}`,
+                  message: `${nextLesson.title}을 이어서 진행할게요.`,
                   action: () => startRecommendedLesson(nextLesson),
                 },
               ]),
           {
             label: "이해가 잘 안 된 부분이 있어요",
             message: "방금 강의에서 이해가 잘 안 된 부분이 있어요.",
-            action: () =>
-              sendStudentRequestProposal(
-                "방금 강의에서 이해가 잘 안 된 부분이 있어요.",
-                "confused_concept",
-              ),
+            action: () => sendStudentRequestProposal("방금 강의에서 이해가 잘 안 된 부분이 있어요."),
           },
           {
             label: "오늘 학습 안내 보기",
@@ -1647,10 +1410,19 @@ export function App() {
       }
 
       case "progress-report": {
-        const report = learningProgressReport ?? createLearningProgressReport();
-        const recommendedNextLesson = report.recommendedNextLessonId
-          ? demoTodaySession.items.find((item) => item.id === report.recommendedNextLessonId)
-          : null;
+        if (!learningProgressReport) {
+          return (
+            <article className="chat-attachment readonly-progress-report">
+              <p className="attachment-note">서버 학습 진행 보고를 불러오는 중입니다.</p>
+            </article>
+          );
+        }
+
+        const report = learningProgressReport;
+        const recommendedNextLesson =
+          report.recommendedNextLessonId === recommendedLesson?.id ? recommendedLesson : null;
+        const isPlayableRecommendation =
+          recommendedNextLesson !== null && isPlayableRecommendedItem(recommendedNextLesson);
 
         return (
           <article
@@ -1678,9 +1450,11 @@ export function App() {
                       <button
                         type="button"
                         className="progress-report-play-button"
-                        onClick={() => playLessonFromProgressReport(recommendedNextLesson)}
+                        onClick={() => startRecommendedLesson(recommendedNextLesson)}
                       >
-                        강의 재생
+                        {isPlayableRecommendation
+                          ? "강의 재생"
+                          : getRecommendedItemActionLabel(recommendedNextLesson)}
                       </button>
                     ) : null}
                   </dd>
@@ -1724,8 +1498,7 @@ export function App() {
               {session.items.map((item, index) => {
                 const isCompletedLecture =
                   item.kind === "lecture" &&
-                  (apiSessionProgress?.completedItemIds.includes(item.id) ??
-                    lessonFeedbacks.some((feedback) => feedback.lessonItemId === item.id));
+                  (apiSessionProgress?.completedItemIds.includes(item.id) ?? false);
 
                 return (
                   <li key={item.id}>
@@ -1880,12 +1653,7 @@ export function App() {
               {studentRequestOptions.map((requestOption) => (
                 <button
                   type="button"
-                  aria-pressed={studentRequestKind === requestOption.kind}
-                  className={`request-card ${
-                    studentRequestKind === requestOption.kind
-                      ? "request-card-selected"
-                      : ""
-                  }`}
+                  className="request-card"
                   key={requestOption.kind}
                   onClick={() => handleStudentRequestFromChat(requestOption.kind)}
                 >
@@ -1896,8 +1664,7 @@ export function App() {
             </div>
 
             <p className="attachment-note strong-note">
-              <strong>{studentRequestAdjustment.summary}</strong>
-              {studentRequestAdjustment.teacherNote}
+              요청을 전송하면 AI 담임이 서버에서 조정안을 만들고, 확인 후에만 수업 편성에 반영합니다.
             </p>
 
             <div className="attachment-actions">
@@ -2202,7 +1969,7 @@ function MockLessonPage({
   onComplete,
   onTogglePlay,
 }: {
-  lesson: LessonItem;
+  lesson: ApiLessonItemDetail;
   isPlaying: boolean;
   isSubmittingFeedback: boolean;
   feedbackError: string | null;
@@ -2213,6 +1980,11 @@ function MockLessonPage({
   const [isFeedbackOpen, setIsFeedbackOpen] = useState(false);
   const [understandingLevel, setUnderstandingLevel] = useState<LearningCheckLevel>(3);
   const [focusLevel, setFocusLevel] = useState<LearningCheckLevel>(3);
+  const playback = lesson.playback;
+
+  if (playback === null) {
+    return null;
+  }
 
   return (
     <main className="lesson-page">
@@ -2232,8 +2004,8 @@ function MockLessonPage({
           <section className="mock-video-panel" aria-label="더미 강의 영상">
             <div className="mock-video-frame">
               <img
-                src="/images/mock-logarithm-lecture.png"
-                alt="로그함수 그래프와 점근선을 설명하는 강의 장면"
+                src={playback.mediaUrl}
+                alt={`${lesson.title} 강의 장면`}
               />
               <div className="mock-video-lesson-label">
                 <span>현재 강의</span>
@@ -2255,11 +2027,11 @@ function MockLessonPage({
               ) : null}
             </div>
             <div className="mock-video-controls" aria-label="더미 영상 진행 상태">
-              <span>04:10</span>
+              <span>00:00</span>
               <div aria-hidden="true">
                 <i />
               </div>
-              <span>{lesson.estimatedMinutes}:00</span>
+              <span>{formatPlaybackDuration(playback.durationSeconds)}</span>
             </div>
           </section>
 

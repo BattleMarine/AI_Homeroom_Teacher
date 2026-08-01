@@ -1,4 +1,4 @@
-export const demoStudentId = "frontend-demo";
+export const demoStudentId = "000";
 
 export type LessonItemKind = "lecture" | "review" | "practice" | "check";
 
@@ -86,6 +86,10 @@ export type ApiLessonItemDetail = ApiLessonItem & {
   playback: {
     kind: "mock-video";
     targetId: string;
+    mediaType: "image";
+    contentType: string;
+    mediaUrl: string;
+    durationSeconds: number;
   } | null;
 };
 
