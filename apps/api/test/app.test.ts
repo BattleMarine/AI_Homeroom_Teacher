@@ -92,6 +92,7 @@ test("커리큘럼 도구는 추천 유형과 무관하게 같은 기준 계획�
   });
   assert.equal(applyResponse.statusCode, 200);
   assert.equal(applyResponse.json().result.applied, true);
+  assert.equal(applyResponse.json().snapshot.revision, 1);
 
   const currentPlanResponse = await app.inject({
     method: "GET",
@@ -147,7 +148,7 @@ test("AI 담임 LLM API가 mock 응답과 내부 도구 요청을 반환한다",
   assert.equal(responseBody.dataSource, "mock");
   assert.equal(responseBody.conversationId, "demo-conversation");
   assert.equal(responseBody.responseType, "mock");
-  assert.equal(responseBody.requestedTools[0], "adjust_curriculum");
+  assert.equal(responseBody.requestedTools[0], "adjust_today_session");
   assert.equal(responseBody.attachment.type, "session-adjustment");
   assert.equal(responseBody.attachment.data.interpretedRequest.maxSessionMinutes, 25);
   assert.equal(responseBody.attachment.data.requiresConfirmation, true);
@@ -183,6 +184,8 @@ test("복합 학생 요구사항은 제안으로 반환되고 확인 뒤에만 �
   assert.equal(confirmationResponse.statusCode, 200);
   assert.equal(confirmationResponse.json().confirmed, true);
   assert.equal(confirmationResponse.json().session.estimatedMinutes, 20);
+  assert.equal(confirmationResponse.json().snapshot.revision, 1);
+  assert.equal(confirmationResponse.json().snapshot.todaySession.estimatedMinutes, 20);
 });
 
 test("커리큘럼 선택 API가 학생별 mock 상태와 오늘 수업을 갱신한다", async (context) => {
@@ -206,6 +209,8 @@ test("커리큘럼 선택 API가 학생별 mock 상태와 오늘 수업을 갱�
   assert.equal(selectionResponse.statusCode, 200);
   assert.equal(selectionResponse.json().studentContext.selectedCurriculumId, "compressed-log");
   assert.equal(selectionResponse.json().session.id, "curriculum-test:log-graph");
+  assert.equal(selectionResponse.json().snapshot.revision, 1);
+  assert.equal(selectionResponse.json().snapshot.studentContext.selectedCurriculumId, "compressed-log");
 
   const stableSelectionResponse = await app.inject({
     method: "POST",
@@ -257,6 +262,8 @@ test("강의 상세와 체크 API가 서버 상태 기반 진행 보고를 반�
   assert.deepEqual(responseBody.reasonCodes, ["low_understanding", "weak_concept_review", "low_focus", "reduce_next_session_load"]);
   assert.equal(responseBody.progress.nextRecommendedItem.id, "stable-log-graph-review-asymptote");
   assert.equal(responseBody.progress.progressPercent, 17);
+  assert.equal(responseBody.snapshot.revision, 1);
+  assert.equal(responseBody.snapshot.progress.nextRecommendedItem.id, "stable-log-graph-review-asymptote");
 
   const progressResponse = await app.inject({
     method: "GET",
@@ -412,4 +419,93 @@ test("추천 학습 항목은 실행 방식과 재생 가능 여부를 함께 �
   });
   assert.equal(lessonResponse.statusCode, 200);
   assert.notEqual(lessonResponse.json().lessonItem.playback, null);
+});
+test("상태 변경 API는 공통 LearningSnapshot을 최신 revision과 함께 반환한다", async (context) => {
+  const app = buildApp();
+  context.after(() => app.close());
+  const studentId = "snapshot-contract-test";
+
+  const selectionResponse = await app.inject({
+    method: "POST",
+    url: "/api/student-context/curriculum",
+    payload: { studentId, curriculumId: "stable-log" },
+  });
+  assert.equal(selectionResponse.statusCode, 200);
+  assert.equal(selectionResponse.json().snapshot.revision, 1);
+
+  const remediationResponse = await app.inject({
+    method: "POST",
+    url: "/api/progress-tools/execute",
+    payload: { tool: "insert_remediation", input: { studentId, concept: "점근선" } },
+  });
+  assert.equal(remediationResponse.statusCode, 200);
+  assert.equal(remediationResponse.json().snapshot.revision, 2);
+  assert.equal(remediationResponse.json().snapshot.todaySession.items[0].kind, "review");
+
+  const deferralResponse = await app.inject({
+    method: "POST",
+    url: "/api/progress-tools/execute",
+    payload: { tool: "defer_learning_item", input: { studentId, lessonItemId: "stable-log-graph-shift-lecture" } },
+  });
+  assert.equal(deferralResponse.statusCode, 200);
+  assert.equal(deferralResponse.json().snapshot.revision, 3);
+
+  const feedbackResponse = await app.inject({
+    method: "POST",
+    url: "/api/lesson-feedback",
+    payload: {
+      studentId,
+      lessonId: "stable-log-graph-asymptote-lecture",
+      understandingLevel: 3,
+      focusLevel: 3,
+    },
+  });
+  assert.equal(feedbackResponse.statusCode, 200);
+  assert.equal(feedbackResponse.json().snapshot.revision, 4);
+});
+
+test("오래된 revision의 조율 제안은 409로 거절되고 재확정할 수 없다", async (context) => {
+  const app = buildApp();
+  context.after(() => app.close());
+  const studentId = "revision-conflict-test";
+
+  const proposalResponse = await app.inject({
+    method: "POST",
+    url: "/api/conversations/revision-conflict/messages",
+    payload: { studentId, message: "오늘 시간이 부족해요." },
+  });
+  assert.equal(proposalResponse.statusCode, 200);
+  const proposal = proposalResponse.json().attachment.data;
+  assert.equal(proposal.baseRevision, 0);
+  assert.equal(proposalResponse.json().requestedTools[0], "adjust_today_session");
+
+  const feedbackResponse = await app.inject({
+    method: "POST",
+    url: "/api/lesson-feedback",
+    payload: {
+      studentId,
+      lessonId: "stable-log-graph-asymptote-lecture",
+      understandingLevel: 3,
+      focusLevel: 3,
+    },
+  });
+  assert.equal(feedbackResponse.statusCode, 200);
+
+  const conflictResponse = await app.inject({
+    method: "POST",
+    url: `/api/session-adjustments/${proposal.adjustmentId}/confirm`,
+    payload: { studentId, expectedRevision: proposal.baseRevision },
+  });
+  assert.equal(conflictResponse.statusCode, 409);
+  assert.equal(conflictResponse.json().kind, "revision-conflict");
+  assert.equal(conflictResponse.json().expectedRevision, 0);
+  assert.equal(conflictResponse.json().currentRevision, 1);
+  assert.equal(conflictResponse.json().snapshot.revision, 1);
+
+  const repeatedConfirmationResponse = await app.inject({
+    method: "POST",
+    url: `/api/session-adjustments/${proposal.adjustmentId}/confirm`,
+    payload: { studentId },
+  });
+  assert.equal(repeatedConfirmationResponse.statusCode, 404);
 });

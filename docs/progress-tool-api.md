@@ -28,3 +28,13 @@ POST /api/progress-tools/execute
 ```
 
 `apply_curriculum_plan`을 실행하면 카탈로그 기반 계획이 실제 `GET /api/today-session`, `GET /api/curriculum-map` 조회 결과에 반영된다. 서버를 재시작하면 계획과 조정 상태는 사라진다.
+
+## 오늘 수업 조율 제안
+
+`adjust_today_session`은 학생 메시지를 입력으로 받아 오늘 수업의 시간·복습 우선순위 조율안을 생성합니다. 이 도구는 학습 상태를 변경하지 않으며, 응답의 `baseRevision`과 조율 제안 ID를 사용해 학생 확인 뒤에만 적용합니다.
+
+## 상태 변경과 LearningSnapshot
+
+커리큘럼 선택, 커리큘럼 계획 적용, 보강 삽입, 학습 항목 연기, 강의별 피드백 기록, 조율 제안 확정 응답은 모두 최신 `snapshot`을 포함합니다. `snapshot.revision`은 상태 변경마다 1씩 증가합니다.
+
+조율 제안 확정은 제안의 `baseRevision`과 현재 revision이 다르면 `409` 및 최신 `snapshot`을 반환합니다. 충돌이 난 제안 ID는 다시 확정할 수 없습니다.

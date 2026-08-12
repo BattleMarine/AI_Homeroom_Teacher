@@ -121,6 +121,23 @@ export type LessonFeedbackResult = {
   progress: TodaySessionProgress;
 };
 
+
+export type AdjustmentConfirmationResult =
+  | {
+      kind: "confirmed";
+      adjustmentId: string;
+      confirmed: true;
+      studentContext: StudentContext;
+      session: TodaySession;
+      curriculumMap: Record<string, unknown>;
+      teacherNote: string;
+    }
+  | {
+      kind: "revision-conflict";
+      adjustmentId: string;
+      expectedRevision: number;
+      currentRevision: number;
+    };
 export type ProgressService = {
   listCurriculums(studentId: string): Array<Record<string, unknown>>;
   selectCurriculum(studentId: string, curriculumId: string): StudentContext | undefined;
@@ -133,7 +150,7 @@ export type ProgressService = {
     studentId: string,
     message: string,
   ): Record<string, unknown> | undefined;
-  confirmAdjustment(studentId: string, adjustmentId: string): Record<string, unknown> | undefined;
+  confirmAdjustment(studentId: string, adjustmentId: string, expectedRevision?: number): AdjustmentConfirmationResult | undefined;
   recordLessonFeedback(
     studentId: string,
     lessonId: string,

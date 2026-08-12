@@ -163,11 +163,13 @@ export function createMockProgressService(): ProgressService {
       request,
       proposedContext,
       createdAt: new Date().toISOString(),
+      baseRevision: getRevision(context.studentId),
     };
     adjustmentProposals.set(proposalId, proposal);
 
     return {
       adjustmentId: proposal.id,
+      baseRevision: proposal.baseRevision,
       interpretedRequest: {
         kind: request.kind,
         conditionKinds: request.conditionKinds,
@@ -183,10 +185,21 @@ export function createMockProgressService(): ProgressService {
     };
   }
 
-  function confirmAdjustment(studentId: string, adjustmentId: string): Record<string, unknown> | undefined {
+  function confirmAdjustment(studentId: string, adjustmentId: string, expectedRevision?: number) {
     const proposal = adjustmentProposals.get(adjustmentId);
 
     if (!proposal || proposal.studentId !== (studentId || defaultStudentId)) return undefined;
+
+    const currentRevision = getRevision(proposal.studentId);
+    if (proposal.baseRevision !== currentRevision || (expectedRevision !== undefined && expectedRevision !== currentRevision)) {
+      adjustmentProposals.delete(adjustmentId);
+      return {
+        kind: "revision-conflict" as const,
+        adjustmentId,
+        expectedRevision: expectedRevision ?? proposal.baseRevision,
+        currentRevision,
+      };
+    }
 
     const confirmedContext = {
       ...proposal.proposedContext,
@@ -201,8 +214,9 @@ export function createMockProgressService(): ProgressService {
     adjustmentProposals.delete(adjustmentId);
 
     return {
+      kind: "confirmed" as const,
       adjustmentId,
-      confirmed: true,
+      confirmed: true as const,
       studentContext: confirmedContext,
       session: getTodaySession(confirmedContext.studentId),
       curriculumMap: getCurriculumMap(confirmedContext.studentId),
@@ -253,6 +267,7 @@ export function createMockProgressService(): ProgressService {
       remediationItems.delete(studentId || defaultStudentId);
       const context = createInitialContext(studentId || defaultStudentId, curriculum);
       contexts.set(context.studentId, context);
+      bumpRevision(context.studentId);
       adjustmentProposals.forEach((proposal, proposalId) => {
         if (proposal.studentId === context.studentId) adjustmentProposals.delete(proposalId);
       });
@@ -481,6 +496,7 @@ type AdjustmentProposal = {
   request: InterpretedStudentRequest;
   proposedContext: StudentContext;
   createdAt: string;
+  baseRevision: number;
 };
 
 type InterpretedStudentRequest = {

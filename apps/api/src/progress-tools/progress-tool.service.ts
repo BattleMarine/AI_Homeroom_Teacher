@@ -7,6 +7,10 @@ export function createProgressToolService(progressService: ProgressService): Pro
       const studentId = input.studentId?.trim() || "000";
 
       switch (tool) {
+        case "adjust_today_session": {
+          const result = progressService.createAdjustmentProposal(studentId, input.message ?? "");
+          return result ? { kind: "success", result } : { kind: "not-found" };
+        }
         case "insert_remediation": {
           const result = progressService.insertRemediation(studentId, input);
           return result ? { kind: "success", result } : { kind: "not-found" };

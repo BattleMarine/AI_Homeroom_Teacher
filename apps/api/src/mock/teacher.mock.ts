@@ -73,7 +73,7 @@ export function createMockTeacherMessage(message: string): {
     requestedTools: requestedCurriculumTool
       ? [requestedCurriculumTool]
       : isCurriculumAdjustmentRequest
-        ? ["adjust_curriculum"]
+        ? ["adjust_today_session"]
         : ["get_student_context"],
   };
 }

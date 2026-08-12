@@ -1,6 +1,7 @@
 import type { CurriculumToolName } from "../curriculum-tools/curriculum-tool.types.js";
+import type { ProgressToolName } from "../progress-tools/progress-tool.types.js";
 
-export type TeacherLlmTool = "get_student_context" | "adjust_curriculum" | CurriculumToolName;
+export type TeacherLlmTool = "get_student_context" | ProgressToolName | CurriculumToolName;
 
 export type TeacherLlmRequest = {
   conversationId: string;

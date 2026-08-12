@@ -29,7 +29,7 @@ POST /api/conversations/:conversationId/messages
   "conversationId": "demo-conversation",
   "responseType": "mock",
   "assistantMessage": "말씀해 주신 조건을 반영해 오늘 수업량과 보강 우선순위를 다시 계산했습니다.",
-  "requestedTools": ["adjust_curriculum"],
+  "requestedTools": ["adjust_today_session"],
   "attachment": {
     "type": "session-adjustment",
     "data": {
@@ -46,7 +46,7 @@ POST /api/conversations/:conversationId/messages
 }
 ```
 
-`requestedTools`는 AI 담임이 다음에 필요한 내부 도구를 나타냅니다. 현재 mock 단계에서는 `get_student_context`, `adjust_curriculum` 두 도구 이름만 반환합니다.
+`requestedTools`는 AI 담임이 다음에 필요한 내부 도구를 나타냅니다. 현재 mock 단계에서는 `get_student_context`, `adjust_today_session` 두 도구 이름만 반환합니다.
 
 조율이 필요한 학생 메시지에는 `attachment.type`이 `session-adjustment`로 반환됩니다. `attachment.data.proposedSession`은 아직 확정되지 않은 제안이므로, 프론트는 읽기 전용 카드로 표시한 뒤 학생이 동의할 때만 아래 API를 호출합니다.
 
@@ -98,3 +98,6 @@ LLM이 요청한 도구 호출은 서버가 허용 목록과 입력값을 검증
 mock LLM은 커리큘럼 관련 메시지를 받으면 `create_curriculum_plan`, `compress_curriculum_plan`, `extend_curriculum_plan`, `assess_curriculum_deadline`, `apply_curriculum_plan` 중 하나를 요청합니다. 대화 API는 이 요청을 서버의 규칙 기반 도구로 실행한 뒤 `toolCalls`에 결과를 포함합니다.
 
 현재 선택 유형별 실제 차등 정책은 아직 적용하지 않았으므로, 모든 도구 결과의 `appliedPlanProfile`은 `baseline`입니다. 도구 상세 계약은 [curriculum-tool-api.md](./curriculum-tool-api.md)를 참고합니다.
+## 조율 제안과 상태 변경 경계
+
+`adjust_today_session`은 오늘 수업 조율안을 생성하는 제안 도구이며 상태를 바꾸지 않습니다. `baseRevision`을 가진 제안은 학생 확인 API에서만 적용되며, stale revision은 `409`와 최신 `snapshot`으로 거절됩니다.

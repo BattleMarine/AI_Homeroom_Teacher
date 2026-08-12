@@ -570,7 +570,7 @@ curl -sS -X POST "$API_BASE_URL/api/conversations/frontend-conversation/messages
   "conversationId": "frontend-conversation",
   "responseType": "mock",
   "assistantMessage": "...",
-  "requestedTools": ["adjust_curriculum"],
+  "requestedTools": ["adjust_today_session"],
   "attachment": {
     "type": "session-adjustment",
     "data": {
@@ -660,3 +660,8 @@ GET /api/curriculum-plans/current?studentId={studentId}
 ```
 
 `apply_curriculum_plan`으로 mock 상태에 보관한 계획을 반환합니다. 아직 적용 계획이 없으면 `404`를 반환합니다.
+## 17. 상태 변경 공통 응답
+
+상태를 변경하는 API는 기존 응답 필드를 유지하면서 공통 `snapshot`을 함께 반환합니다. `snapshot`에는 `revision`, `studentContext`, `curriculumPlan`, `todaySession`, `curriculumMap`, `progress`가 포함됩니다.
+
+조율 제안 확정 요청에는 제안의 `baseRevision`을 `expectedRevision`으로 전달할 수 있습니다. 제안 생성 뒤 상태가 변경되었거나 revision이 맞지 않으면 API는 `409`와 최신 `snapshot`을 반환합니다. 충돌이 난 제안 ID는 재사용할 수 없습니다.

@@ -35,6 +35,7 @@ const adjustmentConfirmationRequestSchema = {
   type: "object",
   properties: {
     studentId: { type: "string", minLength: 1, maxLength: 100 },
+    expectedRevision: { type: "integer", minimum: 0 },
   },
   additionalProperties: false,
 } as const;
@@ -120,6 +121,7 @@ const progressToolRequestSchema = {
       type: "object",
       properties: {
         studentId: { type: "string", minLength: 1, maxLength: 100 },
+        message: { type: "string", minLength: 1, maxLength: 2000 },
         concept: { type: "string", minLength: 1, maxLength: 200 },
         lessonItemId: { type: "string", minLength: 1, maxLength: 200 },
         estimatedMinutes: { type: "integer", minimum: 1, maximum: 180 },
@@ -175,6 +177,7 @@ type StudentQuery = {
 
 type AdjustmentConfirmationRequest = {
   studentId?: string;
+  expectedRevision?: number;
 };
 
 type AppDependencies = {
@@ -295,12 +298,13 @@ export function buildApp({
     { schema: { body: progressToolRequestSchema } },
     async (request, reply) => {
       const result = progressTools.execute({ tool: request.body.tool, input: request.body.input ?? {} });
+      request.log.info({ event: "progress_tool_executed", tool: request.body.tool, result: result.kind, revision: progressService.getRevision(getStudentId(request.body.input?.studentId)) }, "진도 도구를 실행했습니다.");
       if (result.kind === "not-found") return reply.code(404).send({ message: "조정할 현재 학습 항목을 찾을 수 없습니다." });
       const studentId = getStudentId(request.body.input?.studentId);
       return {
         dataSource: "mock",
         result: result.result,
-        snapshot: request.body.tool === "assess_schedule_impact" ? null : createLearningSnapshot(studentId),
+        snapshot: isStateChangingProgressTool(request.body.tool) ? createLearningSnapshot(studentId) : null,
       };
     },
   );
@@ -329,6 +333,7 @@ export function buildApp({
         studentContext,
         session: progressService.getTodaySession(studentId),
         curriculumMap: progressService.getCurriculumMap(studentId),
+        snapshot: createLearningSnapshot(studentId),
       };
     },
   );
@@ -404,15 +409,22 @@ export function buildApp({
     { schema: { body: messageRequestSchema } },
     async (request) => {
       const studentId = getStudentId(request.body.studentId);
-      const adjustmentProposal = progressService.createAdjustmentProposal(studentId, request.body.message);
       const llmResponse = await teacherLlmService.generateResponse({
         conversationId: request.params.conversationId,
         message: request.body.message,
       });
+      const requestedProgressTool = llmResponse.requestedTools.find(isProgressToolName);
+      const progressToolResult = requestedProgressTool
+        ? progressTools.execute({ tool: requestedProgressTool, input: { studentId, message: request.body.message } })
+        : undefined;
+      const adjustmentProposal = requestedProgressTool === "adjust_today_session" && progressToolResult?.kind === "success"
+        ? progressToolResult.result
+        : undefined;
       const requestedCurriculumTool = llmResponse.requestedTools.find(isCurriculumToolName);
       const toolResult = requestedCurriculumTool
         ? toolService.execute({ tool: requestedCurriculumTool, input: { studentId } })
         : undefined;
+      request.log.info({ event: "llm_tool_selection", conversationId: request.params.conversationId, progressTool: requestedProgressTool ?? null, curriculumTool: requestedCurriculumTool ?? null, revision: progressService.getRevision(studentId) }, "LLM 도구 요청을 처리했습니다.");
 
       return {
         dataSource: "mock",
@@ -421,10 +433,14 @@ export function buildApp({
         attachment: adjustmentProposal
           ? { type: "session-adjustment", data: adjustmentProposal }
           : null,
-        toolCalls:
-          toolResult?.kind === "success"
+        toolCalls: [
+          ...(progressToolResult?.kind === "success" && requestedProgressTool
+            ? [{ name: requestedProgressTool, result: progressToolResult.result }]
+            : []),
+          ...(toolResult?.kind === "success" && requestedCurriculumTool
             ? [{ name: requestedCurriculumTool, result: toolResult.result }]
-            : [],
+            : []),
+        ],
       };
     },
   );
@@ -433,16 +449,27 @@ export function buildApp({
     "/api/session-adjustments/:adjustmentId/confirm",
     { schema: { body: adjustmentConfirmationRequestSchema } },
     async (request, reply) => {
+      const studentId = getStudentId(request.body.studentId);
       const result = progressService.confirmAdjustment(
-        getStudentId(request.body.studentId),
+        studentId,
         request.params.adjustmentId,
+        request.body.expectedRevision,
       );
 
       if (!result) {
         return reply.code(404).send({ message: "확인할 수 없는 조율 제안입니다." });
       }
 
-      return { dataSource: "mock", ...result };
+      if (result.kind === "revision-conflict") {
+        return reply.code(409).send({
+          dataSource: "mock",
+          message: "조율 제안을 만든 뒤 학습 상태가 변경되었습니다. 최신 상태에서 다시 제안해 주세요.",
+          ...result,
+          snapshot: createLearningSnapshot(studentId),
+        });
+      }
+
+      return { dataSource: "mock", ...result, snapshot: createLearningSnapshot(studentId) };
     },
   );
 
@@ -464,6 +491,7 @@ export function buildApp({
       return {
         dataSource: "mock",
         ...feedbackResult,
+        snapshot: createLearningSnapshot(getStudentId(request.body.studentId)),
       };
     },
   );
@@ -477,4 +505,11 @@ function getStudentId(studentId: string | undefined): string {
 
 function isCurriculumToolName(tool: string): tool is CurriculumToolName {
   return curriculumToolNames.includes(tool as CurriculumToolName);
+}
+function isProgressToolName(tool: string): tool is ProgressToolName {
+  return progressToolNames.includes(tool as ProgressToolName);
+}
+
+function isStateChangingProgressTool(tool: ProgressToolName) {
+  return tool === "insert_remediation" || tool === "defer_learning_item";
 }
