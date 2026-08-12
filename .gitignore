@@ -35,7 +35,7 @@ docs/private/
 # 로컬 도메인·포트·외부 API 기록
 /docs/secrets/
 # 세션 간 클레임·요청 기록 (협업 규칙 문서는 추적)
-/docs/claims/*
+/docs/claims/**
 !/docs/claims/README.md
 private/
 secrets/
