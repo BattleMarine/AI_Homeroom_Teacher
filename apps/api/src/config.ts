@@ -21,3 +21,17 @@ export function getApiServerConfig() {
     port,
   };
 }
+
+export function getPersistenceMode(): "memory" | "postgres" {
+  const mode = process.env.PERSISTENCE_MODE?.trim() || "memory";
+
+  if (mode !== "memory" && mode !== "postgres") {
+    throw new Error("PERSISTENCE_MODE는 memory 또는 postgres여야 합니다.");
+  }
+
+  return mode;
+}
+
+export function getDatabaseConfig() {
+  return { connectionString: getRequiredEnvironmentValue("DATABASE_URL") };
+}

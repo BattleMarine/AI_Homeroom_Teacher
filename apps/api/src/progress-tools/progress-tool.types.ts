@@ -18,7 +18,7 @@ export type ProgressToolInput = {
 };
 
 export type ProgressToolService = {
-  execute(request: { tool: ProgressToolName; input: ProgressToolInput }):
+  execute(request: { tool: ProgressToolName; input: ProgressToolInput }): Promise<
     | { kind: "success"; result: Record<string, unknown> }
-    | { kind: "not-found" };
+    | { kind: "not-found" }>;
 };

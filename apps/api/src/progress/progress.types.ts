@@ -138,32 +138,54 @@ export type AdjustmentConfirmationResult =
       expectedRevision: number;
       currentRevision: number;
     };
+export type PersistedProgressState = {
+  studentId: string;
+  revision: number;
+  context: StudentContext;
+  appliedCurriculum: CurriculumDefinition | null;
+  remediationItems: LessonItem[];
+};
+
+export type PersistedAdjustmentProposal = {
+  id: string;
+  studentId: string;
+  request: {
+    kind: StudentRequestKind;
+    conditionKinds: StudentRequestKind[];
+    summary: string;
+    teacherNote: string;
+    maxSessionMinutes: number;
+    focusConcept?: string;
+    currentStepConcepts: string[];
+  };
+  proposedContext: StudentContext;
+  createdAt: string;
+  baseRevision: number;
+};
+
+export type StatefulProgressService = ProgressService & {
+  exportState(studentId: string): PersistedProgressState;
+  restoreState(state: PersistedProgressState): void;
+  exportAdjustmentProposal(adjustmentId: string): PersistedAdjustmentProposal | undefined;
+  restoreAdjustmentProposal(proposal: PersistedAdjustmentProposal): void;
+};
+type Asyncable<T> = T | Promise<T>;
+
 export type ProgressService = {
-  listCurriculums(studentId: string): Array<Record<string, unknown>>;
-  selectCurriculum(studentId: string, curriculumId: string): StudentContext | undefined;
-  getStudentContext(studentId: string): StudentContext;
-  getTodaySession(studentId: string): TodaySession;
-  getCurriculumMap(studentId: string): Record<string, unknown>;
-  getLessonItem(studentId: string, lessonItemId: string): Record<string, unknown> | undefined;
-  getLessonPlayback(studentId: string, lessonItemId: string): MockLessonPlayback | undefined;
-  createAdjustmentProposal(
-    studentId: string,
-    message: string,
-  ): Record<string, unknown> | undefined;
-  confirmAdjustment(studentId: string, adjustmentId: string, expectedRevision?: number): AdjustmentConfirmationResult | undefined;
-  recordLessonFeedback(
-    studentId: string,
-    lessonId: string,
-    understandingLevel: number,
-    focusLevel: number,
-  ): LessonFeedbackResult | undefined;
-  getTodaySessionProgress(studentId: string): TodaySessionProgress;
-  applyCurriculumPlan(studentId: string, plan: CurriculumDefinition): Record<string, unknown>;
-  insertRemediation(studentId: string, input: { concept?: string; estimatedMinutes?: number }): Record<string, unknown> | undefined;
-  deferLessonItem(studentId: string, lessonItemId?: string): Record<string, unknown> | undefined;
-  assessScheduleImpact(
-    studentId: string,
-    input: { availableMinutesPerDay?: number; targetDays?: number },
-  ): Record<string, unknown>;
-  getRevision(studentId: string): number;
+  listCurriculums(studentId: string): Asyncable<Array<Record<string, unknown>>>;
+  selectCurriculum(studentId: string, curriculumId: string): Asyncable<StudentContext | undefined>;
+  getStudentContext(studentId: string): Asyncable<StudentContext>;
+  getTodaySession(studentId: string): Asyncable<TodaySession>;
+  getCurriculumMap(studentId: string): Asyncable<Record<string, unknown>>;
+  getLessonItem(studentId: string, lessonItemId: string): Asyncable<Record<string, unknown> | undefined>;
+  getLessonPlayback(studentId: string, lessonItemId: string): Asyncable<MockLessonPlayback | undefined>;
+  createAdjustmentProposal(studentId: string, message: string): Asyncable<Record<string, unknown> | undefined>;
+  confirmAdjustment(studentId: string, adjustmentId: string, expectedRevision?: number): Asyncable<AdjustmentConfirmationResult | undefined>;
+  recordLessonFeedback(studentId: string, lessonId: string, understandingLevel: number, focusLevel: number): Asyncable<LessonFeedbackResult | undefined>;
+  getTodaySessionProgress(studentId: string): Asyncable<TodaySessionProgress>;
+  applyCurriculumPlan(studentId: string, plan: CurriculumDefinition): Asyncable<Record<string, unknown>>;
+  insertRemediation(studentId: string, input: { concept?: string; estimatedMinutes?: number }): Asyncable<Record<string, unknown> | undefined>;
+  deferLessonItem(studentId: string, lessonItemId?: string): Asyncable<Record<string, unknown> | undefined>;
+  assessScheduleImpact(studentId: string, input: { availableMinutesPerDay?: number; targetDays?: number }): Asyncable<Record<string, unknown>>;
+  getRevision(studentId: string): Asyncable<number>;
 };

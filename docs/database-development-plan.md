@@ -392,9 +392,9 @@ seed 규칙:
 
 ### 단계 1. DB 실행 기반 고정
 
-- [ ] 현재 Docker 컨테이너의 PostgreSQL 메이저·패치 버전을 확인한다.
-- [ ] `compose.yaml`에 고정 이미지 태그, named volume, healthcheck를 정의한다.
-- [ ] `.env.db.example`에는 변수 이름만 기록한다.
+- [x] 현재 Docker 컨테이너의 PostgreSQL 메이저·패치 버전을 확인한다.
+- [x] `compose.yaml`에 고정 이미지 태그, named volume, healthcheck를 정의한다.
+- [x] `.env.db.example`에는 변수 이름만 기록한다.
 - [ ] 실제 `.env.db.local`과 `DATABASE_URL`은 Git에서 제외한다.
 - [ ] DB 시작·중지·상태 확인 명령을 문서화한다.
 
@@ -407,11 +407,11 @@ seed 규칙:
 
 ### 단계 2. DB 클라이언트와 마이그레이션 구성
 
-- [ ] `pg`, `drizzle-orm`, `drizzle-kit`, `@types/pg`를 API 패키지에 추가한다.
-- [ ] `DATABASE_URL` 검증을 백엔드 설정 계층에 추가한다.
-- [ ] 개발·테스트용 연결 풀 생성과 종료 처리를 구현한다.
+- [x] `pg`, `drizzle-orm`, `drizzle-kit`, `@types/pg`를 API 패키지에 추가한다.
+- [x] `DATABASE_URL` 검증을 백엔드 설정 계층에 추가한다.
+- [x] 개발·테스트용 연결 풀 생성과 종료 처리를 구현한다.
 - [ ] DB 연결 실패 시 서버가 명확한 오류로 시작을 중단하도록 한다.
-- [ ] 마이그레이션 생성·적용 명령을 추가한다.
+- [x] 마이그레이션 생성·적용 명령을 추가한다.
 
 완료 기준:
 
@@ -422,12 +422,12 @@ seed 규칙:
 
 ### 단계 3. 기초 스키마 생성
 
-- [ ] `students` 테이블을 만든다.
-- [ ] `courses` 테이블을 만든다.
-- [ ] `lessons` 테이블을 만든다.
-- [ ] `student_learning_states` 테이블을 만든다.
-- [ ] `lesson_feedback_events` 테이블을 만든다.
-- [ ] `session_adjustment_proposals` 테이블을 만든다.
+- [x] `students` 테이블을 만든다.
+- [x] `courses` 테이블을 만든다.
+- [x] `lessons` 테이블을 만든다.
+- [x] `student_learning_states` 테이블을 만든다.
+- [x] `lesson_feedback_events` 테이블을 만든다.
+- [x] `session_adjustment_proposals` 테이블을 만든다.
 - [ ] FK, unique, check, index를 추가한다.
 - [ ] 초기 마이그레이션 SQL을 검토한다.
 
@@ -440,9 +440,9 @@ pgAdmin에서 테이블, FK, 인덱스를 확인할 수 있다.
 
 ### 단계 4. 기준 데이터 seed
 
-- [ ] 데모 학생 `000`을 추가한다.
-- [ ] 기존 강좌 JSON을 읽어 `courses`에 적재한다.
-- [ ] 기존 강의 JSON을 읽어 `lessons`에 적재한다.
+- [x] 데모 학생 `000`을 추가한다.
+- [x] 기존 강좌 JSON을 읽어 `courses`에 적재한다.
+- [x] 기존 강의 JSON을 읽어 `lessons`에 적재한다.
 - [ ] 중복 실행 안전성을 보장한다.
 - [ ] 원본과 DB의 강의 수·순서·총 시간을 비교하는 테스트를 추가한다.
 
@@ -455,9 +455,9 @@ seed를 두 번 실행해도 레코드 수가 증가하지 않는다.
 
 ### 단계 5. 강좌·강의 조회 저장소 전환
 
-- [ ] `CourseCatalogRepository`를 비동기 인터페이스로 변경한다.
+- [x] `CourseCatalogRepository`를 비동기 인터페이스로 변경한다.
 - [ ] 기존 파일 저장소가 새 인터페이스를 계속 만족하게 한다.
-- [ ] `PostgresCourseCatalogRepository`를 구현한다.
+- [x] `PostgresCourseCatalogRepository`를 구현한다.
 - [ ] 의존성 주입으로 저장소 구현을 선택하도록 한다.
 - [ ] `GET /api/course-catalogs`를 DB 저장소로 검증한다.
 - [ ] `GET /api/course-catalogs/:courseId`를 DB 저장소로 검증한다.
@@ -472,9 +472,9 @@ seed를 두 번 실행해도 레코드 수가 증가하지 않는다.
 
 ### 단계 6. 학생 상태 저장소 전환
 
-- [ ] `ProgressStateRepository` 인터페이스를 만든다.
+- [x] `ProgressStateRepository` 인터페이스를 만든다.
 - [ ] 현재 `Map` 사용을 `MemoryProgressStateRepository`로 옮긴다.
-- [ ] `PostgresProgressStateRepository`를 구현한다.
+- [x] `PostgresProgressStateRepository`를 구현한다.
 - [ ] 학생 상태가 없을 때의 초기화 정책을 고정한다.
 - [ ] 커리큘럼 선택 결과를 DB에 저장한다.
 - [ ] 강의별 피드백 이벤트와 최신 상태를 같은 트랜잭션에 저장한다.
@@ -489,8 +489,8 @@ API 서버를 재시작해도 선택한 커리큘럼과 완료 강의가 복구�
 
 ### 단계 7. 조율 제안 트랜잭션 전환
 
-- [ ] 조율 제안을 `session_adjustment_proposals`에 저장한다.
-- [ ] 확정 시 학생과 조율안 행을 트랜잭션 안에서 조회한다.
+- [x] 조율 제안을 `session_adjustment_proposals`에 저장한다.
+- [x] 확정 시 학생과 조율안 행을 트랜잭션 안에서 조회한다.
 - [ ] `base_revision`과 현재 revision을 비교한다.
 - [ ] `pending` 제안만 한 번 확정할 수 있게 한다.
 - [ ] 충돌 시 상태를 변경하지 않고 `409`와 최신 snapshot을 반환한다.
@@ -505,8 +505,8 @@ API 서버를 재시작해도 선택한 커리큘럼과 완료 강의가 복구�
 
 ### 단계 8. 테스트와 문서 마감
 
-- [ ] 스키마와 seed 테스트를 추가한다.
-- [ ] PostgreSQL 저장소 통합 테스트를 추가한다.
+- [x] 스키마와 seed 테스트를 추가한다.
+- [x] PostgreSQL 저장소 통합 테스트를 추가한다.
 - [ ] DB를 사용하는 Fastify 앱 주입 테스트를 추가한다.
 - [ ] 서버 재시작 상태 복구 시나리오를 검증한다.
 - [ ] 연결 실패, 마이그레이션 누락, revision 충돌을 검증한다.

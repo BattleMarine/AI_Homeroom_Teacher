@@ -15,15 +15,15 @@ export function createFileCourseCatalogRepository(): CourseCatalogRepository {
   const catalog = readCourseCatalogFile();
 
   return {
-    listCourses() {
+    async listCourses() {
       return [catalog.course];
     },
 
-    getCourseCatalog(courseId) {
+    async getCourseCatalog(courseId) {
       return courseId === catalog.course.id ? catalog : undefined;
     },
 
-    getDefaultCourseCatalog() {
+    async getDefaultCourseCatalog() {
       return catalog;
     },
   };

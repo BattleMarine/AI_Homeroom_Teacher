@@ -13,10 +13,10 @@ export function createCurriculumRecommendationService(
   courseCatalogRepository: CourseCatalogRepository,
 ): CurriculumRecommendationService {
   return {
-    recommend(input) {
+    async recommend(input) {
       const catalog = input.courseId
-        ? courseCatalogRepository.getCourseCatalog(input.courseId)
-        : courseCatalogRepository.getDefaultCourseCatalog();
+        ? await courseCatalogRepository.getCourseCatalog(input.courseId)
+        : await courseCatalogRepository.getDefaultCourseCatalog();
 
       if (!catalog) return { kind: "course-not-found" };
 

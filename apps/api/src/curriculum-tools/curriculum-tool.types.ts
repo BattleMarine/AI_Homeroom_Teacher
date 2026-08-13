@@ -42,9 +42,9 @@ export type CurriculumToolResult = {
 };
 
 export type CurriculumToolService = {
-  execute(request: CurriculumToolRequest):
+  execute(request: CurriculumToolRequest): Promise<
     | { kind: "success"; result: CurriculumToolResult }
     | { kind: "course-not-found" }
-    | { kind: "no-matching-lessons" };
-  getAppliedPlan(studentId: string): CurriculumToolResult | undefined;
+    | { kind: "no-matching-lessons" }>;
+  getAppliedPlan(studentId: string): Promise<CurriculumToolResult | undefined>;
 };

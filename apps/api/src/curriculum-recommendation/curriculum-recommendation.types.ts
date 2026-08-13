@@ -60,8 +60,8 @@ export type RecommendedSession = {
 };
 
 export type CurriculumRecommendationService = {
-  recommend(input: CurriculumRecommendationInput):
+  recommend(input: CurriculumRecommendationInput): Promise<
     | { kind: "success"; recommendation: CurriculumRecommendation }
     | { kind: "course-not-found" }
-    | { kind: "no-matching-lessons" };
+    | { kind: "no-matching-lessons" }>;
 };

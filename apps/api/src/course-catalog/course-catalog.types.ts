@@ -1,13 +1,7 @@
 export type CourseCatalogCourse = {
   id: string;
-  provider: {
-    id: string;
-    name: string;
-  };
-  instructor: {
-    id: string;
-    name: string;
-  };
+  provider: { id: string; name: string };
+  instructor: { id: string; name: string };
   title: string;
   primarySubject: string;
   includedSubjects: string[];
@@ -29,10 +23,7 @@ export type CourseCatalogLesson = {
   lessonType: "orientation" | "lecture" | "mock_exam";
   subjectAreas: string[];
   unitNames: string[];
-  duration: {
-    display: string;
-    seconds: number;
-  };
+  duration: { display: string; seconds: number };
   sourceUrl: string | null;
   playbackTargetId: string | null;
 };
@@ -43,7 +34,7 @@ export type CourseCatalog = {
 };
 
 export type CourseCatalogRepository = {
-  listCourses(): CourseCatalogCourse[];
-  getCourseCatalog(courseId: string): CourseCatalog | undefined;
-  getDefaultCourseCatalog(): CourseCatalog;
+  listCourses(): Promise<CourseCatalogCourse[]>;
+  getCourseCatalog(courseId: string): Promise<CourseCatalog | undefined>;
+  getDefaultCourseCatalog(): Promise<CourseCatalog>;
 };

@@ -16,7 +16,7 @@ import {
 import { createProgressToolService } from "./progress-tools/progress-tool.service.js";
 import { progressToolNames, type ProgressToolInput, type ProgressToolName, type ProgressToolService } from "./progress-tools/progress-tool.types.js";
 import { readMockLessonPlaybackAsset } from "./lesson-playback/mock-lesson-playback.service.js";
-import { createMockProgressService } from "./progress/progress.mock-service.js";
+import { createMemoryProgressService } from "./progress/progress.memory-service.js";
 import type { ProgressService } from "./progress/progress.types.js";
 import { createTeacherLlmService } from "./teacher-llm/teacher-llm.service.js";
 import type { TeacherLlmService } from "./teacher-llm/teacher-llm.types.js";
@@ -191,7 +191,7 @@ type AppDependencies = {
 
 export function buildApp({
   teacherLlmService = createTeacherLlmService(),
-  progressService = createMockProgressService(),
+  progressService = createMemoryProgressService(),
   courseCatalogRepository = createFileCourseCatalogRepository(),
   curriculumRecommendationService,
   curriculumToolService,
@@ -202,13 +202,13 @@ export function buildApp({
     curriculumRecommendationService ?? createCurriculumRecommendationService(courseCatalogRepository);
   const toolService = curriculumToolService ?? createCurriculumToolService(recommendationService, progressService);
   const progressTools = progressToolService ?? createProgressToolService(progressService);
-  const createLearningSnapshot = (studentId: string) => ({
-    revision: progressService.getRevision(studentId),
-    studentContext: progressService.getStudentContext(studentId),
-    curriculumPlan: toolService.getAppliedPlan(studentId)?.recommendation ?? null,
-    todaySession: progressService.getTodaySession(studentId),
-    curriculumMap: progressService.getCurriculumMap(studentId),
-    progress: progressService.getTodaySessionProgress(studentId),
+  const createLearningSnapshot = async (studentId: string) => ({
+    revision: await progressService.getRevision(studentId),
+    studentContext: await progressService.getStudentContext(studentId),
+    curriculumPlan: (await toolService.getAppliedPlan(studentId))?.recommendation ?? null,
+    todaySession: await progressService.getTodaySession(studentId),
+    curriculumMap: await progressService.getCurriculumMap(studentId),
+    progress: await progressService.getTodaySessionProgress(studentId),
   });
 
   app.get("/api/health", async () => ({
@@ -220,11 +220,11 @@ export function buildApp({
   app.get("/api/course-catalogs", async () => ({
     dataSource: "mock",
     catalogDataSource: "file",
-    courses: courseCatalogRepository.listCourses(),
+    courses: await courseCatalogRepository.listCourses(),
   }));
 
   app.get<{ Params: { courseId: string } }>("/api/course-catalogs/:courseId", async (request, reply) => {
-    const courseCatalog = courseCatalogRepository.getCourseCatalog(request.params.courseId);
+    const courseCatalog = await courseCatalogRepository.getCourseCatalog(request.params.courseId);
 
     if (!courseCatalog) {
       return reply.code(404).send({ message: "강좌 카탈로그를 찾을 수 없습니다." });
@@ -241,7 +241,7 @@ export function buildApp({
     "/api/curriculum-recommendations",
     { schema: { body: curriculumRecommendationRequestSchema } },
     async (request, reply) => {
-      const result = recommendationService.recommend(request.body);
+      const result = await recommendationService.recommend(request.body);
 
       if (result.kind === "course-not-found") {
         return reply.code(404).send({ message: "추천할 강좌 카탈로그를 찾을 수 없습니다." });
@@ -263,7 +263,7 @@ export function buildApp({
     "/api/curriculum-tools/execute",
     { schema: { body: curriculumToolRequestSchema } },
     async (request, reply) => {
-      const result = toolService.execute({ tool: request.body.tool, input: request.body.input ?? {} });
+      const result = await toolService.execute({ tool: request.body.tool, input: request.body.input ?? {} });
 
       if (result.kind === "course-not-found") {
         return reply.code(404).send({ message: "추천할 강의 카탈로그를 찾을 수 없습니다." });
@@ -278,13 +278,13 @@ export function buildApp({
         dataSource: "mock",
         catalogDataSource: "file",
         result: result.result,
-        snapshot: request.body.tool === "apply_curriculum_plan" ? createLearningSnapshot(studentId) : null,
+        snapshot: request.body.tool === "apply_curriculum_plan" ? await createLearningSnapshot(studentId) : null,
       };
     },
   );
 
   app.get<{ Querystring: StudentQuery }>("/api/curriculum-plans/current", async (request, reply) => {
-    const plan = toolService.getAppliedPlan(getStudentId(request.query.studentId));
+    const plan = await toolService.getAppliedPlan(getStudentId(request.query.studentId));
 
     if (!plan) {
       return reply.code(404).send({ message: "아직 적용된 커리큘럼 계획이 없습니다." });
@@ -297,24 +297,24 @@ export function buildApp({
     "/api/progress-tools/execute",
     { schema: { body: progressToolRequestSchema } },
     async (request, reply) => {
-      const result = progressTools.execute({ tool: request.body.tool, input: request.body.input ?? {} });
-      request.log.info({ event: "progress_tool_executed", tool: request.body.tool, result: result.kind, revision: progressService.getRevision(getStudentId(request.body.input?.studentId)) }, "진도 도구를 실행했습니다.");
+      const result = await progressTools.execute({ tool: request.body.tool, input: request.body.input ?? {} });
+      request.log.info({ event: "progress_tool_executed", tool: request.body.tool, result: result.kind, revision: await progressService.getRevision(getStudentId(request.body.input?.studentId)) }, "진도 도구를 실행했습니다.");
       if (result.kind === "not-found") return reply.code(404).send({ message: "조정할 현재 학습 항목을 찾을 수 없습니다." });
       const studentId = getStudentId(request.body.input?.studentId);
       return {
         dataSource: "mock",
         result: result.result,
-        snapshot: isStateChangingProgressTool(request.body.tool) ? createLearningSnapshot(studentId) : null,
+        snapshot: isStateChangingProgressTool(request.body.tool) ? await createLearningSnapshot(studentId) : null,
       };
     },
   );
   app.get<{ Querystring: StudentQuery }>("/api/learning-snapshot", async (request) => {
     const studentId = getStudentId(request.query.studentId);
-    return { dataSource: "mock", snapshot: createLearningSnapshot(studentId) };
+    return { dataSource: "mock", snapshot: await createLearningSnapshot(studentId) };
   });
   app.get<{ Querystring: StudentQuery }>("/api/curriculums", async (request) => ({
     dataSource: "mock",
-    curriculums: progressService.listCurriculums(getStudentId(request.query.studentId)),
+    curriculums: await progressService.listCurriculums(getStudentId(request.query.studentId)),
   }));
 
   app.post<{ Body: CurriculumSelectionRequest }>(
@@ -322,7 +322,7 @@ export function buildApp({
     { schema: { body: curriculumSelectionRequestSchema } },
     async (request, reply) => {
       const studentId = getStudentId(request.body.studentId);
-      const studentContext = progressService.selectCurriculum(studentId, request.body.curriculumId);
+      const studentContext = await progressService.selectCurriculum(studentId, request.body.curriculumId);
 
       if (!studentContext) {
         return reply.code(404).send({ message: "존재하지 않는 커리큘럼입니다." });
@@ -331,38 +331,38 @@ export function buildApp({
       return {
         dataSource: "mock",
         studentContext,
-        session: progressService.getTodaySession(studentId),
-        curriculumMap: progressService.getCurriculumMap(studentId),
-        snapshot: createLearningSnapshot(studentId),
+        session: await progressService.getTodaySession(studentId),
+        curriculumMap: await progressService.getCurriculumMap(studentId),
+        snapshot: await createLearningSnapshot(studentId),
       };
     },
   );
 
   app.get<{ Querystring: StudentQuery }>("/api/student-context", async (request) => ({
     dataSource: "mock",
-    studentContext: progressService.getStudentContext(getStudentId(request.query.studentId)),
+    studentContext: await progressService.getStudentContext(getStudentId(request.query.studentId)),
   }));
 
   app.get<{ Querystring: StudentQuery }>("/api/today-session", async (request) => ({
     dataSource: "mock",
-    session: progressService.getTodaySession(getStudentId(request.query.studentId)),
+    session: await progressService.getTodaySession(getStudentId(request.query.studentId)),
   }));
 
   app.get<{ Querystring: StudentQuery }>("/api/today-session/progress", async (request) => ({
     dataSource: "mock",
-    progress: progressService.getTodaySessionProgress(getStudentId(request.query.studentId)),
+    progress: await progressService.getTodaySessionProgress(getStudentId(request.query.studentId)),
   }));
 
   app.get<{ Querystring: StudentQuery }>("/api/curriculum-map", async (request) => ({
     dataSource: "mock",
-    curriculumMap: progressService.getCurriculumMap(getStudentId(request.query.studentId)),
+    curriculumMap: await progressService.getCurriculumMap(getStudentId(request.query.studentId)),
   }));
 
   app.get<{ Params: { lessonItemId: string }; Querystring: StudentQuery }>(
     "/api/lesson-items/:lessonItemId",
     { schema: { params: lessonItemParamsSchema, querystring: studentQuerySchema } },
     async (request, reply) => {
-      const lessonItem = progressService.getLessonItem(
+      const lessonItem = await progressService.getLessonItem(
         getStudentId(request.query.studentId),
         request.params.lessonItemId,
       );
@@ -379,7 +379,7 @@ export function buildApp({
     "/api/lesson-items/:lessonItemId/playback",
     { schema: { params: lessonItemParamsSchema, querystring: studentQuerySchema } },
     async (request, reply) => {
-      const playback = progressService.getLessonPlayback(
+      const playback = await progressService.getLessonPlayback(
         getStudentId(request.query.studentId),
         request.params.lessonItemId,
       );
@@ -415,16 +415,16 @@ export function buildApp({
       });
       const requestedProgressTool = llmResponse.requestedTools.find(isProgressToolName);
       const progressToolResult = requestedProgressTool
-        ? progressTools.execute({ tool: requestedProgressTool, input: { studentId, message: request.body.message } })
+        ? await progressTools.execute({ tool: requestedProgressTool, input: { studentId, message: request.body.message } })
         : undefined;
       const adjustmentProposal = requestedProgressTool === "adjust_today_session" && progressToolResult?.kind === "success"
         ? progressToolResult.result
         : undefined;
       const requestedCurriculumTool = llmResponse.requestedTools.find(isCurriculumToolName);
       const toolResult = requestedCurriculumTool
-        ? toolService.execute({ tool: requestedCurriculumTool, input: { studentId } })
+        ? await toolService.execute({ tool: requestedCurriculumTool, input: { studentId } })
         : undefined;
-      request.log.info({ event: "llm_tool_selection", conversationId: request.params.conversationId, progressTool: requestedProgressTool ?? null, curriculumTool: requestedCurriculumTool ?? null, revision: progressService.getRevision(studentId) }, "LLM 도구 요청을 처리했습니다.");
+      request.log.info({ event: "llm_tool_selection", conversationId: request.params.conversationId, progressTool: requestedProgressTool ?? null, curriculumTool: requestedCurriculumTool ?? null, revision: await progressService.getRevision(studentId) }, "LLM 도구 요청을 처리했습니다.");
 
       return {
         dataSource: "mock",
@@ -450,7 +450,7 @@ export function buildApp({
     { schema: { body: adjustmentConfirmationRequestSchema } },
     async (request, reply) => {
       const studentId = getStudentId(request.body.studentId);
-      const result = progressService.confirmAdjustment(
+      const result = await progressService.confirmAdjustment(
         studentId,
         request.params.adjustmentId,
         request.body.expectedRevision,
@@ -465,11 +465,11 @@ export function buildApp({
           dataSource: "mock",
           message: "조율 제안을 만든 뒤 학습 상태가 변경되었습니다. 최신 상태에서 다시 제안해 주세요.",
           ...result,
-          snapshot: createLearningSnapshot(studentId),
+          snapshot: await createLearningSnapshot(studentId),
         });
       }
 
-      return { dataSource: "mock", ...result, snapshot: createLearningSnapshot(studentId) };
+      return { dataSource: "mock", ...result, snapshot: await createLearningSnapshot(studentId) };
     },
   );
 
@@ -477,7 +477,7 @@ export function buildApp({
     "/api/lesson-feedback",
     { schema: { body: lessonFeedbackRequestSchema } },
     async (request, reply) => {
-      const feedbackResult = progressService.recordLessonFeedback(
+      const feedbackResult = await progressService.recordLessonFeedback(
         getStudentId(request.body.studentId),
         request.body.lessonId,
         request.body.understandingLevel,
@@ -491,7 +491,7 @@ export function buildApp({
       return {
         dataSource: "mock",
         ...feedbackResult,
-        snapshot: createLearningSnapshot(getStudentId(request.body.studentId)),
+        snapshot: await createLearningSnapshot(getStudentId(request.body.studentId)),
       };
     },
   );

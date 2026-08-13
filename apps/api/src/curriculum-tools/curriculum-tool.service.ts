@@ -16,8 +16,8 @@ export function createCurriculumToolService(
   const appliedPlans = new Map<string, CurriculumToolResult>();
 
   return {
-    execute(request) {
-      const recommendationResult = curriculumRecommendationService.recommend(request.input);
+    async execute(request) {
+      const recommendationResult = await curriculumRecommendationService.recommend(request.input);
 
       if (recommendationResult.kind !== "success") return recommendationResult;
 
@@ -49,13 +49,13 @@ export function createCurriculumToolService(
 
       if (applied) {
         appliedPlans.set(studentId, result);
-        progressService?.applyCurriculumPlan(studentId, createProgressCurriculum(recommendation));
+        await progressService?.applyCurriculumPlan(studentId, createProgressCurriculum(recommendation));
       }
 
       return { kind: "success", result };
     },
 
-    getAppliedPlan(studentId) {
+    async getAppliedPlan(studentId) {
       return appliedPlans.get(studentId.trim() || defaultStudentId);
     },
   };

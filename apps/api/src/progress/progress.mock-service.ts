@@ -3,7 +3,8 @@ import type {
   CurriculumDefinition,
   CurriculumId,
   LessonItem,
-  ProgressService,
+  PersistedProgressState,
+  StatefulProgressService,
   StudentRequestKind,
   StudentContext,
   TodaySession,
@@ -12,7 +13,7 @@ import type {
 
 const defaultStudentId = "000";
 
-export function createMockProgressService(): ProgressService {
+export function createMockProgressService(): StatefulProgressService {
   const contexts = new Map<string, StudentContext>();
   const adjustmentProposals = new Map<string, AdjustmentProposal>();
   const appliedCurriculums = new Map<string, CurriculumDefinition>();
@@ -283,6 +284,36 @@ export function createMockProgressService(): ProgressService {
     getTodaySessionProgress,
 
     getRevision,
+
+    exportState(studentId) {
+      const context = getContext(studentId);
+      return structuredClone({
+        studentId: context.studentId,
+        revision: getRevision(context.studentId),
+        context,
+        appliedCurriculum: appliedCurriculums.get(context.studentId) ?? null,
+        remediationItems: remediationItems.get(context.studentId) ?? [],
+      } satisfies PersistedProgressState);
+    },
+
+    restoreState(state) {
+      const restored = structuredClone(state);
+      contexts.set(restored.studentId, restored.context);
+      revisions.set(restored.studentId, restored.revision);
+      if (restored.appliedCurriculum) appliedCurriculums.set(restored.studentId, restored.appliedCurriculum);
+      else appliedCurriculums.delete(restored.studentId);
+      if (restored.remediationItems.length > 0) remediationItems.set(restored.studentId, restored.remediationItems);
+      else remediationItems.delete(restored.studentId);
+    },
+
+    exportAdjustmentProposal(adjustmentId) {
+      const proposal = adjustmentProposals.get(adjustmentId);
+      return proposal ? structuredClone(proposal) : undefined;
+    },
+
+    restoreAdjustmentProposal(proposal) {
+      adjustmentProposals.set(proposal.id, structuredClone(proposal));
+    },
 
     applyCurriculumPlan(studentId, plan) {
       const context = getContext(studentId);

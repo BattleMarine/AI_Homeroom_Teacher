@@ -3,26 +3,26 @@ import type { ProgressToolService } from "./progress-tool.types.js";
 
 export function createProgressToolService(progressService: ProgressService): ProgressToolService {
   return {
-    execute({ tool, input }) {
+    async execute({ tool, input }) {
       const studentId = input.studentId?.trim() || "000";
 
       switch (tool) {
         case "adjust_today_session": {
-          const result = progressService.createAdjustmentProposal(studentId, input.message ?? "");
+          const result = await progressService.createAdjustmentProposal(studentId, input.message ?? "");
           return result ? { kind: "success", result } : { kind: "not-found" };
         }
         case "insert_remediation": {
-          const result = progressService.insertRemediation(studentId, input);
+          const result = await progressService.insertRemediation(studentId, input);
           return result ? { kind: "success", result } : { kind: "not-found" };
         }
         case "defer_learning_item": {
-          const result = progressService.deferLessonItem(studentId, input.lessonItemId);
+          const result = await progressService.deferLessonItem(studentId, input.lessonItemId);
           return result ? { kind: "success", result } : { kind: "not-found" };
         }
         case "assess_schedule_impact":
           return {
             kind: "success",
-            result: progressService.assessScheduleImpact(studentId, input),
+            result: await progressService.assessScheduleImpact(studentId, input),
           };
       }
     },
