@@ -63,12 +63,32 @@ temp/
 *.swo
 
 # 로컬 저장 데이터와 데모 실행 중 생성 파일
+
+# PostgreSQL 로컬 데이터와 백업
+postgres-data/
+pgdata/
+.db-data/
+db-backups/
+*.dump
+*.sql.dump
+*.backup
+
+# PostgreSQL 로컬 접속 정보
+.pgpass
+pgpass.conf
+
+# 로컬 Docker Compose 덮어쓰기
+compose.override.yaml
+docker-compose.override.yml
+
 *.local.json
 *.local.jsonl
 *.session.json
 *.session.jsonl
 local-data/
 runtime-data/
+
+# compose.yaml, DB schema, migration SQL, seed와 환경 변수 예시는 Git 추적 대상
 
 # IDE/에디터 로컬 설정
 .vscode/

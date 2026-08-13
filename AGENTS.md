@@ -402,12 +402,50 @@ git add -A
 
 ```text
 프론트: src/, 화면 스타일, Vite 설정, 프론트 API 클라이언트
-백엔드: apps/api/, 백엔드 테스트, 백엔드 API·운영 문서, 백엔드 패키지 설정
+백엔드: apps/api/ 중 HTTP API·도메인 서비스·규칙 엔진, 백엔드 테스트, 백엔드 API·운영 문서
+DB: PostgreSQL 실행 설정, 스키마, 마이그레이션, seed, DB 클라이언트, 저장소 구현, DB 통합 테스트
 공유 영역: README, AGENTS, package.json, pnpm-lock.yaml, pnpm-workspace.yaml, docs/
 ```
 
 공유 영역은 프론트와 백엔드 변경이 섞일 수 있으므로, 파일 전체의 변경 내용을 확인한 뒤 현재 작업과 직접 관련된 경우에만 포함한다.
 내용의 소유가 불분명하면 커밋하지 않고 해당 세션 또는 통합 확인 단계로 넘긴다.
+
+### DB 전담 세션 커밋 규칙
+
+PostgreSQL 도입과 영속화 작업은 프론트·백엔드 기능 개발 세션과 분리된 DB 전담 세션에서 구현하고 커밋한다.
+
+DB 세션의 기본 소유 범위는 다음과 같다.
+
+```text
+compose.yaml과 DB 컨테이너 실행 설정
+DB 환경 변수 예시와 DB 관련 Git 제외 설정
+apps/api/src/db/
+apps/api의 DB schema·migration·seed 파일
+학생·강좌·강의·진도 상태의 PostgreSQL repository 구현
+DB 연결 설정과 연결 상태 검사
+DB 저장소·마이그레이션·seed 통합 테스트
+DB 도입으로 직접 변경되는 apps/api/package.json
+DB 의존성 변경으로 생성되는 pnpm-lock.yaml
+DB 실행·마이그레이션·복구 문서
+```
+
+실제 경로가 위 구조와 다르더라도 변경 목적이 PostgreSQL 연결, 데이터 영속화, 마이그레이션 또는 저장소 구현이면 DB 세션의 작업으로 본다.
+
+프론트 세션과 백엔드 세션은 DB 세션 소유 파일을 자신의 커밋에 포함하지 않는다. 반대로 DB 세션은 프론트 UI, LLM 연결, DB 전환과 무관한 API 기능 변경을 커밋하지 않는다.
+
+`apps/api/`, `package.json`, `pnpm-lock.yaml`, `docs/`처럼 소유 범위가 겹치는 파일은 변경 내용을 직접 확인한다. DB 의존성이나 DB 실행 명령 때문에 바뀐 부분만 DB 세션이 커밋하며, 다른 세션의 변경이 섞였으면 해당 파일을 커밋하지 않고 통합 확인 단계로 넘긴다.
+
+DB 관련 커밋 제목에는 작업 영역을 표시한다.
+
+```text
+chore : [DB] PostgreSQL 개발환경 구성
+feat : [DB] 학생·강좌·강의 기초 스키마 추가
+feat : [DB] 강좌 카탈로그 저장소 구현
+test : [DB] PostgreSQL 저장소 통합 테스트 추가
+docs : [DB] 마이그레이션과 복구 절차 정리
+```
+
+실제 DB 데이터, Docker volume 내용, 비밀번호, 실제 `DATABASE_URL`, dump와 backup 파일은 어떤 세션에서도 커밋하지 않는다.
 
 커밋 제목에는 작업 영역을 표시한다.
 
