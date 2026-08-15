@@ -51,12 +51,13 @@ export const lessons = pgTable("lessons", {
 ]);
 
 export const studentLearningStates = pgTable("student_learning_states", {
-  studentId: varchar("student_id", { length: 100 }).primaryKey().references(() => students.id),
+  studentId: varchar("student_id", { length: 100 }).notNull().references(() => students.id),
+  subjectCode: varchar("subject_code", { length: 100 }).notNull(),
   revision: integer("revision").notNull(),
   stateJson: jsonb("state_json").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
-});
+}, (table) => [uniqueIndex("student_learning_states_student_subject_key").on(table.studentId, table.subjectCode)]);
 
 export const studentCurricula = pgTable("student_curricula", {
   id: varchar("id", { length: 200 }).primaryKey(),
@@ -64,6 +65,7 @@ export const studentCurricula = pgTable("student_curricula", {
   subjectCode: varchar("subject_code", { length: 100 }).notNull(),
   title: varchar("title", { length: 500 }).notNull(),
   status: varchar("status", { length: 20 }).notNull(),
+  presentationJson: jsonb("presentation_json").notNull(),
   currentVersionId: varchar("current_version_id", { length: 200 }),
   revision: integer("revision").notNull(),
   stateJson: jsonb("state_json").notNull(),
@@ -87,16 +89,21 @@ export const curriculumSteps = pgTable("curriculum_steps", {
   id: varchar("id", { length: 200 }).primaryKey(),
   curriculumVersionId: varchar("curriculum_version_id", { length: 200 }).notNull().references(() => curriculumVersions.id),
   sequence: integer("sequence").notNull(),
+  sourceId: varchar("source_id", { length: 200 }).notNull(),
   title: varchar("title", { length: 500 }).notNull(),
   goal: text("goal"),
   conceptTags: jsonb("concept_tags").notNull(),
   estimatedMinutes: integer("estimated_minutes").notNull(),
-}, (table) => [uniqueIndex("curriculum_steps_version_sequence_key").on(table.curriculumVersionId, table.sequence)]);
+}, (table) => [
+  uniqueIndex("curriculum_steps_version_sequence_key").on(table.curriculumVersionId, table.sequence),
+  uniqueIndex("curriculum_steps_version_source_id_key").on(table.curriculumVersionId, table.sourceId),
+]);
 
 export const curriculumItems = pgTable("curriculum_items", {
   id: varchar("id", { length: 200 }).primaryKey(),
   curriculumStepId: varchar("curriculum_step_id", { length: 200 }).notNull().references(() => curriculumSteps.id),
   sequence: integer("sequence").notNull(),
+  sourceId: varchar("source_id", { length: 200 }).notNull(),
   kind: varchar("kind", { length: 20 }).notNull(),
   lessonId: varchar("lesson_id", { length: 200 }).references(() => lessons.id),
   title: varchar("title", { length: 500 }).notNull(),
@@ -107,28 +114,31 @@ export const curriculumItems = pgTable("curriculum_items", {
   reason: text("reason"),
 }, (table) => [
   uniqueIndex("curriculum_items_step_sequence_key").on(table.curriculumStepId, table.sequence),
+  uniqueIndex("curriculum_items_step_source_id_key").on(table.curriculumStepId, table.sourceId),
   check("curriculum_items_lecture_requires_lesson_check", sql`${table.kind} <> 'lecture' OR ${table.lessonId} IS NOT NULL`),
 ]);
 
 export const lessonFeedbackEvents = pgTable("lesson_feedback_events", {
   id: uuid("id").primaryKey(),
   studentId: varchar("student_id", { length: 100 }).notNull().references(() => students.id),
+  subjectCode: varchar("subject_code", { length: 100 }).notNull(),
   lessonItemId: varchar("lesson_item_id", { length: 200 }).notNull(),
   understandingLevel: integer("understanding_level").notNull(),
   focusLevel: integer("focus_level").notNull(),
   reasonCodes: jsonb("reason_codes").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
-}, (table) => [index("lesson_feedback_events_student_id_idx").on(table.studentId)]);
+}, (table) => [index("lesson_feedback_events_student_subject_idx").on(table.studentId, table.subjectCode)]);
 
 export const sessionAdjustmentProposals = pgTable("session_adjustment_proposals", {
   id: varchar("id", { length: 200 }).primaryKey(),
   studentId: varchar("student_id", { length: 100 }).notNull().references(() => students.id),
+  subjectCode: varchar("subject_code", { length: 100 }).notNull(),
   baseRevision: integer("base_revision").notNull(),
   proposalJson: jsonb("proposal_json").notNull(),
   status: varchar("status", { length: 20 }).notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
   confirmedAt: timestamp("confirmed_at", { withTimezone: true }),
 }, (table) => [
-  index("session_adjustment_proposals_student_status_idx").on(table.studentId, table.status),
+  index("session_adjustment_proposals_student_subject_status_idx").on(table.studentId, table.subjectCode, table.status),
   index("session_adjustment_proposals_created_at_idx").on(table.createdAt),
 ]);

@@ -31,12 +31,20 @@ export type CurriculumVersionInput = {
 
 export type StudentCurriculumState = Record<string, unknown>;
 
+export type CurriculumPresentation = {
+  paceLabel: string;
+  description: string;
+  recommendedFor: string[];
+  teacherComment: string;
+};
+
 export type StudentCurriculum = {
   id: string;
   studentId: string;
   subjectCode: string;
   title: string;
   status: StudentCurriculumStatus;
+  presentation: CurriculumPresentation;
   currentVersionId: string | null;
   revision: number;
   state: StudentCurriculumState;
@@ -54,6 +62,14 @@ export type StoredCurriculumVersion = {
 
 export type StudentCurriculumDetail = StudentCurriculum & { currentVersion: StoredCurriculumVersion | null };
 
+export type CurriculumReadModel =
+  | { kind: "selection-required" }
+  | {
+      kind: "active";
+      curriculum: StudentCurriculumDetail;
+      executionState: { revision: number; state: Record<string, unknown> } | null;
+    };
+
 export type VersionSaveResult =
   | { kind: "saved"; curriculum: StudentCurriculumDetail }
   | { kind: "revision-conflict"; currentRevision: number };
@@ -66,10 +82,12 @@ export type StudentCurriculumRepository = {
     studentId: string;
     subjectCode: string;
     title: string;
+    presentation: CurriculumPresentation;
     state: StudentCurriculumState;
     version: CurriculumVersionInput;
   }): Promise<void>;
   selectCandidate(studentId: string, curriculumId: string): Promise<StudentCurriculum | undefined>;
+  getActiveReadModel(studentId: string, subjectCode: string): Promise<CurriculumReadModel>;
   saveNewVersion(input: {
     studentId: string;
     curriculumId: string;

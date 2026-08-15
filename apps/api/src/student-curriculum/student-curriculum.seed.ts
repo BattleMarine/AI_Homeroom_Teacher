@@ -21,6 +21,12 @@ export async function seedDemoStudentCurricula(
       studentId: demoStudentId,
       subjectCode,
       title: curriculum.title,
+      presentation: {
+        paceLabel: curriculum.pace,
+        description: curriculum.description,
+        recommendedFor: curriculum.recommendedFor,
+        teacherComment: curriculum.teacherComment,
+      },
       state: createInitialState(curriculum),
       version: createVersion(curriculum, playableLessonIds),
     });

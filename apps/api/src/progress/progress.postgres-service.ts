@@ -32,6 +32,15 @@ export function createRepositoryProgressService(repository: ProgressStateReposit
       return withState(studentId, (service) => service.listCurriculums(studentId));
     },
     async selectCurriculum(studentId, curriculumId) {
+      if (repository.selectCurriculum) {
+        const selected = await repository.selectCurriculum(studentId, curriculumId, await initialState(studentId), (state) => {
+          const service = createMockProgressService();
+          service.restoreState(state);
+          const result = service.selectCurriculum(studentId, curriculumId);
+          return { state: service.exportState(studentId), result };
+        });
+        if (selected) return selected;
+      }
       return mutate(studentId, (service) => service.selectCurriculum(studentId, curriculumId));
     },
     async getStudentContext(studentId) {

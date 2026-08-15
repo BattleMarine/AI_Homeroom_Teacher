@@ -26,6 +26,12 @@ export type ProgressStateRepository = {
     callback: (state: PersistedProgressState) => ProgressStateMutation<T>,
   ): Promise<T>;
   createProposal(proposal: PersistedAdjustmentProposal): Promise<void>;
+  selectCurriculum?<T>(
+    studentId: string,
+    curriculumId: string,
+    initialState: PersistedProgressState,
+    callback: (state: PersistedProgressState) => ProgressStateMutation<T>,
+  ): Promise<T | undefined>;
   confirmProposal<T>(
     studentId: string,
     adjustmentId: string,

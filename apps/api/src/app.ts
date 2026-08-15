@@ -150,6 +150,7 @@ const lessonItemParamsSchema = {
   },
   additionalProperties: false,
 } as const;
+const defaultSubjectCode = "math-logarithm";
 
 type TeacherMessageRequest = {
   studentId?: string;
@@ -205,6 +206,8 @@ export function buildApp({
     curriculumRecommendationService ?? createCurriculumRecommendationService(courseCatalogRepository);
   const toolService = curriculumToolService ?? createCurriculumToolService(recommendationService, progressService);
   const progressTools = progressToolService ?? createProgressToolService(progressService);
+  const getCurriculumReadModel = async (studentId: string) =>
+    studentCurriculumRepository?.getActiveReadModel(studentId, defaultSubjectCode);
   const createLearningSnapshot = async (studentId: string) => ({
     revision: await progressService.getRevision(studentId),
     studentContext: await progressService.getStudentContext(studentId),
@@ -311,29 +314,50 @@ export function buildApp({
       };
     },
   );
-  app.get<{ Querystring: StudentQuery }>("/api/learning-snapshot", async (request) => {
+  app.get<{ Querystring: StudentQuery }>("/api/learning-snapshot", async (request, reply) => {
     const studentId = getStudentId(request.query.studentId);
-    return { dataSource: "mock", snapshot: await createLearningSnapshot(studentId) };
+    const curriculumReadModel = await getCurriculumReadModel(studentId);
+    if (curriculumReadModel?.kind === "selection-required") {
+      return reply.code(409).send(createSelectionRequiredResponse());
+    }
+    return { dataSource: "mock", snapshot: await createLearningSnapshot(studentId), curriculumReadModel: curriculumReadModel ?? null };
   });
   app.get<{ Querystring: StudentQuery }>("/api/curriculums", async (request) => {
     const studentId = getStudentId(request.query.studentId);
-    const curriculums = await progressService.listCurriculums(studentId);
     const storedCurriculums = studentCurriculumRepository
       ? await studentCurriculumRepository.listForStudent(studentId)
       : [];
-    if (storedCurriculums.length === 0) return { dataSource: "mock", curriculums };
+    if (storedCurriculums.length === 0) {
+      return { dataSource: "mock", curriculums: await progressService.listCurriculums(studentId) };
+    }
     return {
       dataSource: "mock",
-      curriculums: curriculums.map((curriculum) => {
-        const stored = storedCurriculums.find((candidate) => candidate.id === curriculum.id);
-        if (!stored) return curriculum;
-        return {
-          ...curriculum,
-          selected: stored.status === "active",
-          currentStepId: stored.status === "active" ? getStoredCurrentStepId(stored.state) : null,
-        };
-      }),
+      curriculums: storedCurriculums.map((curriculum) => ({
+        id: curriculum.id,
+        title: curriculum.title,
+        pace: curriculum.presentation.paceLabel,
+        description: curriculum.presentation.description,
+        recommendedFor: curriculum.presentation.recommendedFor,
+        teacherComment: curriculum.presentation.teacherComment,
+        stepCount: curriculum.currentVersion?.steps.length ?? 0,
+        selected: curriculum.status === "active",
+        currentStepId: curriculum.status === "active" ? getStoredCurrentStepId(curriculum.state) : null,
+      })),
     };
+  });
+
+  app.get<{ Querystring: StudentQuery }>("/api/curriculum-read-model", async (request, reply) => {
+    if (!studentCurriculumRepository) {
+      return reply.code(404).send({ message: "PostgreSQL 커리큘럼 읽기 모델을 사용할 수 없습니다." });
+    }
+    const readModel = await studentCurriculumRepository.getActiveReadModel(
+      getStudentId(request.query.studentId),
+      defaultSubjectCode,
+    );
+    if (readModel.kind === "selection-required") {
+      return reply.code(409).send(createSelectionRequiredResponse());
+    }
+    return { dataSource: "mock", readModel };
   });
 
   app.post<{ Body: CurriculumSelectionRequest }>(
@@ -341,9 +365,6 @@ export function buildApp({
     { schema: { body: curriculumSelectionRequestSchema } },
     async (request, reply) => {
       const studentId = getStudentId(request.body.studentId);
-      if (studentCurriculumRepository) {
-        await studentCurriculumRepository.selectCandidate(studentId, request.body.curriculumId);
-      }
       const studentContext = await progressService.selectCurriculum(studentId, request.body.curriculumId);
 
       if (!studentContext) {
@@ -360,10 +381,13 @@ export function buildApp({
     },
   );
 
-  app.get<{ Querystring: StudentQuery }>("/api/student-context", async (request) => ({
-    dataSource: "mock",
-    studentContext: await progressService.getStudentContext(getStudentId(request.query.studentId)),
-  }));
+  app.get<{ Querystring: StudentQuery }>("/api/student-context", async (request, reply) => {
+    const studentId = getStudentId(request.query.studentId);
+    if ((await getCurriculumReadModel(studentId))?.kind === "selection-required") {
+      return reply.code(409).send(createSelectionRequiredResponse());
+    }
+    return { dataSource: "mock", studentContext: await progressService.getStudentContext(studentId) };
+  });
 
   app.get<{ Querystring: StudentQuery }>("/api/today-session", async (request) => ({
     dataSource: "mock",
@@ -538,4 +562,11 @@ function isStateChangingProgressTool(tool: ProgressToolName) {
 
 function getStoredCurrentStepId(state: Record<string, unknown>) {
   return typeof state.currentStepId === "string" ? state.currentStepId : null;
+}
+
+function createSelectionRequiredResponse() {
+  return {
+    code: "CURRICULUM_SELECTION_REQUIRED",
+    message: "학습을 시작할 커리큘럼을 먼저 선택해 주세요.",
+  };
 }
