@@ -4,7 +4,9 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "tsx watch src/server.ts",
+    "dev": "pnpm dev:postgres",
+    "dev:postgres": "node scripts/dev-server.mjs postgres",
+    "dev:memory": "node scripts/dev-server.mjs memory",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/server.js",
     "test": "tsx --test test/app.test.ts",

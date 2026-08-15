@@ -1,8 +1,85 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { buildApp } from "../src/app.js";
+import { createMemoryProgressStateRepository } from "../src/progress/progress.memory-repository.js";
+import { createPostgresProgressService } from "../src/progress/progress.postgres-service.js";
+import type { StudentCurriculumDetail, StudentCurriculumRepository } from "../src/student-curriculum/student-curriculum.types.js";
 
 const calculusCourseId = "ebsi-2026-suneungwanseong-namchiyeol-math-calculus-all";
+
+test("PostgreSQL 진도 서비스는 읽기 모델의 sourceId를 규칙 엔진 입력으로 사용한다", async (context) => {
+  const curriculum: StudentCurriculumDetail = {
+    id: "db-curriculum",
+    studentId: "db-source-test",
+    subjectCode: "math-logarithm",
+    title: "DB 커리큘럼",
+    status: "active",
+    presentation: {
+      paceLabel: "검증형",
+      description: "DB 읽기 모델 검증용 커리큘럼입니다.",
+      recommendedFor: ["검증"],
+      teacherComment: "읽기 모델을 기준으로 수업을 구성합니다.",
+    },
+    currentVersionId: "db-curriculum:v1",
+    revision: 0,
+    state: { currentStepId: "db-step:1", completedStepIds: [], weakConcepts: [] },
+    currentVersion: {
+      id: "db-curriculum:v1",
+      versionNumber: 1,
+      changeReason: "initial",
+      changeSummary: null,
+      steps: [{
+        id: "db-curriculum:v1:db-step:1",
+        sourceId: "db-step:1",
+        sequence: 0,
+        title: "DB 단계",
+        goal: "DB에서 읽은 항목으로 수업을 구성합니다.",
+        conceptTags: ["DB 개념"],
+        estimatedMinutes: 20,
+        items: [{
+          id: "db-curriculum:v1:db-step:1:db-item:1",
+          sourceId: "db-item:1",
+          sequence: 0,
+          kind: "lecture",
+          lessonId: "db-lesson-1",
+          title: "DB 강의",
+          description: "DB 강의 설명",
+          conceptTags: ["DB 개념"],
+          estimatedMinutes: 20,
+          required: true,
+          reason: "DB 학습",
+        }],
+      }],
+    },
+  };
+  const repository: StudentCurriculumRepository = {
+    async listForStudent() { return [curriculum]; },
+    async getById(_studentId, curriculumId) { return curriculumId === curriculum.id ? curriculum : undefined; },
+    async seedCandidate() {},
+    async selectCandidate() { return curriculum; },
+    async getActiveReadModel() { return { kind: "active", curriculum, executionState: null }; },
+    async saveNewVersion() { return undefined; },
+  };
+  const app = buildApp({
+    studentCurriculumRepository: repository,
+    progressService: createPostgresProgressService(createMemoryProgressStateRepository(), repository),
+  });
+  context.after(() => app.close());
+
+  const snapshotResponse = await app.inject({ method: "GET", url: "/api/learning-snapshot?studentId=db-source-test" });
+  assert.equal(snapshotResponse.statusCode, 200);
+  assert.equal(snapshotResponse.json().dataSource, "postgres");
+  assert.equal(snapshotResponse.json().snapshot.todaySession.id, "db-source-test:db-step:1");
+  assert.equal(snapshotResponse.json().snapshot.todaySession.items[0].id, "db-item:1");
+
+  const feedbackResponse = await app.inject({
+    method: "POST",
+    url: "/api/lesson-feedback",
+    payload: { studentId: "db-source-test", lessonId: "db-item:1", understandingLevel: 2, focusLevel: 3 },
+  });
+  assert.equal(feedbackResponse.statusCode, 200);
+  assert.equal(feedbackResponse.json().completedLesson.id, "db-item:1");
+});
 
 test("파일 강좌 카탈로그 API가 미적분 강좌와 강의 목록을 반환한다", async (context) => {
   const app = buildApp();

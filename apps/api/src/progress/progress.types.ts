@@ -1,4 +1,4 @@
-export type CurriculumId = "stable-log" | "compressed-log" | "practice-log";
+export type CurriculumId = string;
 
 export type LessonItemKind = "lecture" | "review" | "practice" | "check";
 
@@ -36,7 +36,7 @@ export type CurriculumStep = {
 export type CurriculumDefinition = {
   id: CurriculumId;
   title: string;
-  pace: "안정형" | "압축형" | "문제적용형";
+  pace: string;
   description: string;
   recommendedFor: string[];
   teacherComment: string;
@@ -105,6 +105,14 @@ export type TodaySessionProgress = {
   isCompleted: boolean;
   nextRecommendedItem: NextRecommendedItem | null;
   teacherReport: string;
+};
+
+export type ProgressSnapshot = {
+  revision: number;
+  studentContext: StudentContext;
+  todaySession: TodaySession;
+  curriculumMap: Record<string, unknown>;
+  progress: TodaySessionProgress;
 };
 export type LessonFeedbackResult = {
   responseType: "mock";
@@ -188,4 +196,5 @@ export type ProgressService = {
   deferLessonItem(studentId: string, lessonItemId?: string): Asyncable<Record<string, unknown> | undefined>;
   assessScheduleImpact(studentId: string, input: { availableMinutesPerDay?: number; targetDays?: number }): Asyncable<Record<string, unknown>>;
   getRevision(studentId: string): Asyncable<number>;
+  getProgressSnapshot(studentId: string): Asyncable<ProgressSnapshot>;
 };

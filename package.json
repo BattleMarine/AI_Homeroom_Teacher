@@ -4,8 +4,11 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "dev:api": "pnpm --filter @ai-homeroom/api dev",
+    "dev": "concurrently -k -n FRONT,API -c cyan,magenta \"pnpm dev:front\" \"pnpm dev:api\"",
+    "dev:front": "vite",
+    "dev:api": "pnpm --filter @ai-homeroom/api dev:postgres",
+    "dev:api-postgresql": "pnpm dev:api",
+    "dev:api-memory": "pnpm --filter @ai-homeroom/api dev:memory",
     "build": "tsc -b && vite build",
     "build:api": "pnpm --filter @ai-homeroom/api build",
     "preview": "vite preview"
@@ -18,6 +21,7 @@
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "@vitejs/plugin-react": "^5.0.0",
+    "concurrently": "^10.0.4",
     "typescript": "^5.8.0",
     "vite": "^7.0.0"
   }

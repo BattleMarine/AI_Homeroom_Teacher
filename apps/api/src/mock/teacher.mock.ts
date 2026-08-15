@@ -52,6 +52,23 @@ export function createMockTeacherMessage(message: string): {
   assistantMessage: string;
   requestedTools: TeacherLlmTool[];
 } {
+  const normalizedKoreanMessage = message.trim();
+  const isKoreanAdjustmentRequest =
+    normalizedKoreanMessage.includes("시간") ||
+    normalizedKoreanMessage.includes("부족") ||
+    normalizedKoreanMessage.includes("복습") ||
+    normalizedKoreanMessage.includes("강의") ||
+    normalizedKoreanMessage.includes("진도") ||
+    normalizedKoreanMessage.includes("헷갈");
+
+  if (isKoreanAdjustmentRequest) {
+    return {
+      responseType: "mock",
+      assistantMessage: "말씀해 주신 조건을 반영해 오늘 수업 분량과 보강 우선순위를 다시 계산했습니다. 제안안을 확인해 주시면 적용하겠습니다.",
+      requestedTools: ["adjust_today_session"],
+    };
+  }
+
   const normalizedMessage = message.trim();
   const isCurriculumAdjustmentRequest =
     normalizedMessage.includes("시간") ||

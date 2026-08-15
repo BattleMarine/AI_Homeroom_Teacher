@@ -1,5 +1,47 @@
 # 백엔드 API 호출 가이드
 
+## PostgreSQL 읽기 모델 전환 안내
+
+`PERSISTENCE_MODE=postgres`에서는 학습 화면 API가 PostgreSQL의 활성 커리큘럼 현재 버전과 실행 상태를 규칙 엔진 입력으로 사용합니다. 메모리 mock 커리큘럼으로 조용히 대체하지 않습니다.
+
+- 학습 API 응답의 `dataSource`는 메모리 모드에서 `mock`, PostgreSQL 모드에서 `postgres`입니다.
+- 단계와 학습 항목은 DB 내부 ID가 아니라 `sourceId`를 그대로 반환합니다. `:`가 포함된 ID도 URL 인코딩하여 조회할 수 있습니다.
+- 활성 커리큘럼이 없으면 학습 시작 API는 `409`와 `CURRICULUM_SELECTION_REQUIRED`를 반환합니다. 프론트는 기존 커리큘럼 선택 화면으로 전환해야 합니다.
+- 후보 선택은 기존 `POST /api/student-context/curriculum`을 사용하며, PostgreSQL 모드에서는 후보 활성화와 실행 상태 초기화를 함께 처리합니다.
+
+강의 재생 오류 계약은 다음과 같습니다.
+
+| 상황 | 상태 | 코드 |
+| --- | --- | --- |
+| 현재 커리큘럼에 항목 없음 | 404 | `LESSON_ITEM_NOT_FOUND` |
+| 강의가 아닌 항목의 재생 요청 | 404 | `PLAYBACK_NOT_AVAILABLE` |
+| 강의 재생 대상 미설정 | 422 | `PLAYBACK_NOT_CONFIGURED` |
+| 서버 mock 재생 자산 누락 | 500 | `PLAYBACK_ASSET_MISSING` |
+
+현재 데모의 재생 결과물은 서버가 제공하는 mock 미디어입니다. 실제 영상 스트리밍 연동은 데모 범위 밖입니다.
+
+### PostgreSQL 로컬 실행
+
+기본 개발 명령은 **무시 파일 `.env.db.local`을 API Node 프로세스 내부에만 자동으로 로드하는 방식**입니다. 이 파일은 Git에 포함하지 않으며, 실제 접속 문자열은 터미널·문서·로그에 출력하지 않습니다.
+
+```bash
+pnpm dev
+pnpm dev:api
+pnpm dev:api-postgresql
+pnpm dev:api-memory
+```
+
+- `pnpm dev`: 프론트엔드와 PostgreSQL API를 함께 실행한다. 한 프로세스가 종료되면 나머지도 종료한다.
+- `pnpm dev:api`와 `pnpm dev:api-postgresql`: `.env.db.local`을 로드한 PostgreSQL API만 실행한다.
+- `pnpm dev:api-memory`: `.env.db.local`을 로드하지 않는 명시적 memory API 실행 명령이다.
+- `pnpm dev:front`: 프론트엔드만 실행한다.
+
+PostgreSQL API는 `PERSISTENCE_MODE=postgres`와 `DATABASE_URL`을 검증한다. API 바인딩 환경 변수가 없으면 개발 실행기가 안전한 로컬 기본값을 적용한다.
+
+- 필수 환경 변수는 `PERSISTENCE_MODE=postgres`, `DATABASE_URL`입니다. `API_HOST`와 `API_PORT`는 지정하지 않으면 각각 `127.0.0.1`, `4100`을 사용합니다.
+- PostgreSQL 연결 또는 마이그레이션에 실패하면 서버 시작은 실패하며, memory/mock 저장소로 자동 전환하지 않습니다.
+- 시작 로그는 비밀값 없이 `persistenceMode`만 남깁니다. 요청 URL과 본문은 기본 로그에서 기록하지 않으며, 상태 변경 로그는 이벤트 종류·저장소 종류·revision만 남깁니다.
+
 ## 목적
 
 이 문서는 프론트엔드가 AI 담임 백엔드 API를 호출하기 위한 계약입니다. 실제 LLM 응답은 아직 mock이지만, 서버 상태는 실행 설정에 따라 메모리 또는 PostgreSQL에 저장됩니다.
@@ -41,7 +83,7 @@ PERSISTENCE_MODE=postgres: DATABASE_URL로 연결한 PostgreSQL에 저장되어 
 
 ## 공통 응답과 오류
 
-현재 성공 응답에는 레거시 계약인 `dataSource: "mock"`이 포함됩니다. PostgreSQL 사용 여부를 판별하는 값이 아니므로 화면 분기에는 사용하지 않습니다. 저장소 모드는 서버의 `PERSISTENCE_MODE` 설정과 시작 로그로 확인합니다.
+성공 응답의 `dataSource`는 실제 저장소 모드를 반영합니다. 메모리 모드는 `mock`, PostgreSQL 모드는 `postgres`이며, 프론트는 이 값을 저장소 전환의 화면 분기 기준으로 사용하지 않고 응답 데이터를 그대로 표시합니다. 서버 시작 로그에는 비밀값 없이 `persistenceMode`만 기록됩니다.
 
 | 상태 | 의미 | 프론트 처리 |
 | --- | --- | --- |

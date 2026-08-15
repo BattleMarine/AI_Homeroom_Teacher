@@ -17,6 +17,7 @@ import { createProgressToolService } from "./progress-tools/progress-tool.servic
 import { progressToolNames, type ProgressToolInput, type ProgressToolName, type ProgressToolService } from "./progress-tools/progress-tool.types.js";
 import { readMockLessonPlaybackAsset } from "./lesson-playback/mock-lesson-playback.service.js";
 import { createMemoryProgressService } from "./progress/progress.memory-service.js";
+import { CurriculumSelectionRequiredError } from "./progress/progress.postgres-service.js";
 import type { ProgressService } from "./progress/progress.types.js";
 import type { StudentCurriculumRepository } from "./student-curriculum/student-curriculum.types.js";
 import { createTeacherLlmService } from "./teacher-llm/teacher-llm.service.js";
@@ -146,7 +147,7 @@ const lessonItemParamsSchema = {
   type: "object",
   required: ["lessonItemId"],
   properties: {
-    lessonItemId: { type: "string", minLength: 1, maxLength: 200, pattern: "^[a-z0-9][a-z0-9-]*$" },
+    lessonItemId: { type: "string", minLength: 1, maxLength: 200, pattern: "^[a-z0-9][a-z0-9:-]*$" },
   },
   additionalProperties: false,
 } as const;
@@ -201,7 +202,15 @@ export function buildApp({
   progressToolService,
   studentCurriculumRepository,
 }: AppDependencies = {}) {
-  const app = Fastify({ logger: true });
+  const app = Fastify({ logger: true, disableRequestLogging: true });
+  const dataSource = studentCurriculumRepository ? "postgres" : "mock";
+  const catalogDataSource = dataSource === "postgres" ? "postgres" : "file";
+  app.setErrorHandler((error, _request, reply) => {
+    if (error instanceof CurriculumSelectionRequiredError) {
+      return reply.code(409).send(createSelectionRequiredResponse());
+    }
+    return reply.send(error);
+  });
   const recommendationService =
     curriculumRecommendationService ?? createCurriculumRecommendationService(courseCatalogRepository);
   const toolService = curriculumToolService ?? createCurriculumToolService(recommendationService, progressService);
@@ -209,23 +218,19 @@ export function buildApp({
   const getCurriculumReadModel = async (studentId: string) =>
     studentCurriculumRepository?.getActiveReadModel(studentId, defaultSubjectCode);
   const createLearningSnapshot = async (studentId: string) => ({
-    revision: await progressService.getRevision(studentId),
-    studentContext: await progressService.getStudentContext(studentId),
+    ...(await progressService.getProgressSnapshot(studentId)),
     curriculumPlan: (await toolService.getAppliedPlan(studentId))?.recommendation ?? null,
-    todaySession: await progressService.getTodaySession(studentId),
-    curriculumMap: await progressService.getCurriculumMap(studentId),
-    progress: await progressService.getTodaySessionProgress(studentId),
   });
 
   app.get("/api/health", async () => ({
     status: "ok",
     service: "ai-homeroom-api",
-    dataSource: "mock",
+    dataSource,
   }));
 
   app.get("/api/course-catalogs", async () => ({
-    dataSource: "mock",
-    catalogDataSource: "file",
+    dataSource,
+    catalogDataSource,
     courses: await courseCatalogRepository.listCourses(),
   }));
 
@@ -237,8 +242,8 @@ export function buildApp({
     }
 
     return {
-      dataSource: "mock",
-      catalogDataSource: "file",
+      dataSource,
+      catalogDataSource,
       courseCatalog,
     };
   });
@@ -258,8 +263,8 @@ export function buildApp({
       }
 
       return {
-        dataSource: "mock",
-        catalogDataSource: "file",
+        dataSource,
+        catalogDataSource,
         recommendation: result.recommendation,
       };
     },
@@ -281,8 +286,8 @@ export function buildApp({
 
       const studentId = getStudentId(request.body.input?.studentId);
       return {
-        dataSource: "mock",
-        catalogDataSource: "file",
+        dataSource,
+        catalogDataSource,
         result: result.result,
         snapshot: request.body.tool === "apply_curriculum_plan" ? await createLearningSnapshot(studentId) : null,
       };
@@ -296,7 +301,7 @@ export function buildApp({
       return reply.code(404).send({ message: "아직 적용된 커리큘럼 계획이 없습니다." });
     }
 
-    return { dataSource: "mock", plan };
+    return { dataSource, plan };
   });
 
   app.post<{ Body: ProgressToolApiRequest }>(
@@ -308,7 +313,7 @@ export function buildApp({
       if (result.kind === "not-found") return reply.code(404).send({ message: "조정할 현재 학습 항목을 찾을 수 없습니다." });
       const studentId = getStudentId(request.body.input?.studentId);
       return {
-        dataSource: "mock",
+        dataSource,
         result: result.result,
         snapshot: isStateChangingProgressTool(request.body.tool) ? await createLearningSnapshot(studentId) : null,
       };
@@ -320,7 +325,7 @@ export function buildApp({
     if (curriculumReadModel?.kind === "selection-required") {
       return reply.code(409).send(createSelectionRequiredResponse());
     }
-    return { dataSource: "mock", snapshot: await createLearningSnapshot(studentId), curriculumReadModel: curriculumReadModel ?? null };
+    return { dataSource, snapshot: await createLearningSnapshot(studentId), curriculumReadModel: curriculumReadModel ?? null };
   });
   app.get<{ Querystring: StudentQuery }>("/api/curriculums", async (request) => {
     const studentId = getStudentId(request.query.studentId);
@@ -328,10 +333,10 @@ export function buildApp({
       ? await studentCurriculumRepository.listForStudent(studentId)
       : [];
     if (storedCurriculums.length === 0) {
-      return { dataSource: "mock", curriculums: await progressService.listCurriculums(studentId) };
+      return { dataSource, curriculums: await progressService.listCurriculums(studentId) };
     }
     return {
-      dataSource: "mock",
+      dataSource,
       curriculums: storedCurriculums.map((curriculum) => ({
         id: curriculum.id,
         title: curriculum.title,
@@ -357,7 +362,7 @@ export function buildApp({
     if (readModel.kind === "selection-required") {
       return reply.code(409).send(createSelectionRequiredResponse());
     }
-    return { dataSource: "mock", readModel };
+    return { dataSource, readModel };
   });
 
   app.post<{ Body: CurriculumSelectionRequest }>(
@@ -371,12 +376,15 @@ export function buildApp({
         return reply.code(404).send({ message: "존재하지 않는 커리큘럼입니다." });
       }
 
+      const snapshot = await createLearningSnapshot(studentId);
+      request.log.info({ event: "curriculum_selection_saved", dataSource, revision: snapshot.revision }, "커리큘럼 선택 상태를 저장했습니다.");
+
       return {
-        dataSource: "mock",
+        dataSource,
         studentContext,
         session: await progressService.getTodaySession(studentId),
         curriculumMap: await progressService.getCurriculumMap(studentId),
-        snapshot: await createLearningSnapshot(studentId),
+        snapshot,
       };
     },
   );
@@ -386,21 +394,21 @@ export function buildApp({
     if ((await getCurriculumReadModel(studentId))?.kind === "selection-required") {
       return reply.code(409).send(createSelectionRequiredResponse());
     }
-    return { dataSource: "mock", studentContext: await progressService.getStudentContext(studentId) };
+    return { dataSource, studentContext: await progressService.getStudentContext(studentId) };
   });
 
   app.get<{ Querystring: StudentQuery }>("/api/today-session", async (request) => ({
-    dataSource: "mock",
+    dataSource,
     session: await progressService.getTodaySession(getStudentId(request.query.studentId)),
   }));
 
   app.get<{ Querystring: StudentQuery }>("/api/today-session/progress", async (request) => ({
-    dataSource: "mock",
+    dataSource,
     progress: await progressService.getTodaySessionProgress(getStudentId(request.query.studentId)),
   }));
 
   app.get<{ Querystring: StudentQuery }>("/api/curriculum-map", async (request) => ({
-    dataSource: "mock",
+    dataSource,
     curriculumMap: await progressService.getCurriculumMap(getStudentId(request.query.studentId)),
   }));
 
@@ -417,7 +425,7 @@ export function buildApp({
         return reply.code(404).send({ message: "현재 커리큘럼에서 강의 항목을 찾을 수 없습니다." });
       }
 
-      return { dataSource: "mock", lessonItem };
+      return { dataSource, lessonItem };
     },
   );
 
@@ -425,13 +433,18 @@ export function buildApp({
     "/api/lesson-items/:lessonItemId/playback",
     { schema: { params: lessonItemParamsSchema, querystring: studentQuerySchema } },
     async (request, reply) => {
-      const playback = await progressService.getLessonPlayback(
-        getStudentId(request.query.studentId),
-        request.params.lessonItemId,
-      );
+      const studentId = getStudentId(request.query.studentId);
+      const lessonItem = await progressService.getLessonItem(studentId, request.params.lessonItemId);
+      if (!lessonItem) {
+        return reply.code(404).send({ code: "LESSON_ITEM_NOT_FOUND", message: "현재 커리큘럼에서 학습 항목을 찾을 수 없습니다." });
+      }
+      if (lessonItem.kind !== "lecture") {
+        return reply.code(404).send({ code: "PLAYBACK_NOT_AVAILABLE", message: "강의가 아닌 학습 항목은 재생할 수 없습니다." });
+      }
+      const playback = await progressService.getLessonPlayback(studentId, request.params.lessonItemId);
 
       if (!playback) {
-        return reply.code(404).send({ message: "현재 커리큘럼에서 재생 가능한 강의 항목을 찾을 수 없습니다." });
+        return reply.code(422).send({ code: "PLAYBACK_NOT_CONFIGURED", message: "이 강의에는 재생 대상이 설정되지 않았습니다." });
       }
 
       try {
@@ -439,13 +452,13 @@ export function buildApp({
 
         if (!media) {
           request.log.error({ assetKey: playback.assetKey }, "등록되지 않은 강의 mock 미디어 자산입니다.");
-          return reply.code(500).send({ message: "강의 재생 리소스를 준비하지 못했습니다." });
+          return reply.code(500).send({ code: "PLAYBACK_ASSET_MISSING", message: "강의 재생 리소스를 준비하지 못했습니다." });
         }
 
         return reply.type(playback.contentType).send(media);
       } catch {
         request.log.error({ assetKey: playback.assetKey }, "강의 mock 미디어를 읽지 못했습니다.");
-        return reply.code(500).send({ message: "강의 재생 리소스를 준비하지 못했습니다." });
+        return reply.code(500).send({ code: "PLAYBACK_ASSET_MISSING", message: "강의 재생 리소스를 준비하지 못했습니다." });
       }
     },
   );
@@ -470,10 +483,10 @@ export function buildApp({
       const toolResult = requestedCurriculumTool
         ? await toolService.execute({ tool: requestedCurriculumTool, input: { studentId } })
         : undefined;
-      request.log.info({ event: "llm_tool_selection", conversationId: request.params.conversationId, progressTool: requestedProgressTool ?? null, curriculumTool: requestedCurriculumTool ?? null, revision: await progressService.getRevision(studentId) }, "LLM 도구 요청을 처리했습니다.");
+      request.log.info({ event: "llm_tool_selection", progressTool: requestedProgressTool ?? null, curriculumTool: requestedCurriculumTool ?? null, revision: await progressService.getRevision(studentId) }, "LLM 도구 요청을 처리했습니다.");
 
       return {
-        dataSource: "mock",
+        dataSource,
         conversationId: request.params.conversationId,
         ...llmResponse,
         attachment: adjustmentProposal
@@ -508,14 +521,16 @@ export function buildApp({
 
       if (result.kind === "revision-conflict") {
         return reply.code(409).send({
-          dataSource: "mock",
+          dataSource,
           message: "조율 제안을 만든 뒤 학습 상태가 변경되었습니다. 최신 상태에서 다시 제안해 주세요.",
           ...result,
           snapshot: await createLearningSnapshot(studentId),
         });
       }
 
-      return { dataSource: "mock", ...result, snapshot: await createLearningSnapshot(studentId) };
+      const snapshot = await createLearningSnapshot(studentId);
+      request.log.info({ event: "session_adjustment_confirmed", dataSource, revision: snapshot.revision }, "조율 제안을 확정했습니다.");
+      return { dataSource, ...result, snapshot };
     },
   );
 
@@ -523,8 +538,9 @@ export function buildApp({
     "/api/lesson-feedback",
     { schema: { body: lessonFeedbackRequestSchema } },
     async (request, reply) => {
+      const studentId = getStudentId(request.body.studentId);
       const feedbackResult = await progressService.recordLessonFeedback(
-        getStudentId(request.body.studentId),
+        studentId,
         request.body.lessonId,
         request.body.understandingLevel,
         request.body.focusLevel,
@@ -534,10 +550,13 @@ export function buildApp({
         return reply.code(404).send({ message: "현재 커리큘럼에서 강의 항목을 찾을 수 없습니다." });
       }
 
+      const snapshot = await createLearningSnapshot(studentId);
+      request.log.info({ event: "lesson_feedback_saved", dataSource, revision: snapshot.revision }, "강의별 학습 결과를 저장했습니다.");
+
       return {
-        dataSource: "mock",
+        dataSource,
         ...feedbackResult,
-        snapshot: await createLearningSnapshot(getStudentId(request.body.studentId)),
+        snapshot,
       };
     },
   );

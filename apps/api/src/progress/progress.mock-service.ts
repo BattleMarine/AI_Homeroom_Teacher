@@ -1,7 +1,6 @@
 import { mockCurriculums } from "./progress.mock-data.js";
 import type {
   CurriculumDefinition,
-  CurriculumId,
   LessonItem,
   PersistedProgressState,
   StatefulProgressService,
@@ -13,7 +12,7 @@ import type {
 
 const defaultStudentId = "000";
 
-export function createMockProgressService(): StatefulProgressService {
+export function createMockProgressService(curriculums: CurriculumDefinition[] = mockCurriculums): StatefulProgressService {
   const contexts = new Map<string, StudentContext>();
   const adjustmentProposals = new Map<string, AdjustmentProposal>();
   const appliedCurriculums = new Map<string, CurriculumDefinition>();
@@ -26,7 +25,9 @@ export function createMockProgressService(): StatefulProgressService {
 
     if (existingContext) return existingContext;
 
-    const initialContext = createInitialContext(normalizedStudentId, getCurriculum("stable-log"));
+    const initialCurriculum = curriculums[0];
+    if (!initialCurriculum) throw new Error("진도 서비스를 시작할 커리큘럼이 없습니다.");
+    const initialContext = createInitialContext(normalizedStudentId, getCurriculum(curriculums, initialCurriculum.id));
     contexts.set(normalizedStudentId, initialContext);
     return initialContext;
   }
@@ -41,7 +42,7 @@ export function createMockProgressService(): StatefulProgressService {
   }
   function getCurrentCurriculum(studentId: string): CurriculumDefinition {
     const context = getContext(studentId);
-    return appliedCurriculums.get(context.studentId) ?? getCurriculum(context.selectedCurriculumId);
+    return appliedCurriculums.get(context.studentId) ?? getCurriculum(curriculums, context.selectedCurriculumId);
   }
 
   function getTodaySession(studentId: string): TodaySession {
@@ -179,7 +180,7 @@ export function createMockProgressService(): StatefulProgressService {
         maxSessionMinutes: request.maxSessionMinutes,
       },
       before: summarizeSession(getTodaySession(studentId)),
-      proposedSession: createTodaySessionFromContext(proposedContext),
+      proposedSession: createTodaySessionFromContext(proposedContext, getCurrentCurriculum(studentId)),
       teacherNote: request.teacherNote,
       requiresConfirmation: true,
       availableActions: ["confirm", "continue_conversation"],
@@ -249,7 +250,7 @@ export function createMockProgressService(): StatefulProgressService {
   return {
     listCurriculums(studentId) {
       const context = getContext(studentId);
-      return mockCurriculums.map((curriculum) => ({
+      return curriculums.map((curriculum) => ({
         id: curriculum.id,
         title: curriculum.title,
         pace: curriculum.pace,
@@ -262,8 +263,8 @@ export function createMockProgressService(): StatefulProgressService {
     },
 
     selectCurriculum(studentId, curriculumId) {
-      if (!mockCurriculums.some((item) => item.id === curriculumId)) return undefined;
-      const curriculum = getCurriculum(curriculumId as CurriculumId);
+      if (!curriculums.some((item) => item.id === curriculumId)) return undefined;
+      const curriculum = getCurriculum(curriculums, curriculumId);
       appliedCurriculums.delete(studentId || defaultStudentId);
       remediationItems.delete(studentId || defaultStudentId);
       const context = createInitialContext(studentId || defaultStudentId, curriculum);
@@ -282,6 +283,16 @@ export function createMockProgressService(): StatefulProgressService {
     getTodaySession,
 
     getTodaySessionProgress,
+
+    getProgressSnapshot(studentId) {
+      return {
+        revision: getRevision(studentId),
+        studentContext: getContext(studentId),
+        todaySession: getTodaySession(studentId),
+        curriculumMap: getCurriculumMap(studentId),
+        progress: getTodaySessionProgress(studentId),
+      };
+    },
 
     getRevision,
 
@@ -456,9 +467,9 @@ function createInitialContext(studentId: string, curriculum: CurriculumDefinitio
   };
 }
 
-function getCurriculum(curriculumId: CurriculumId): CurriculumDefinition {
-  const selectedCurriculum = mockCurriculums.find((item) => item.id === curriculumId);
-  const baselineCurriculum = mockCurriculums.find((item) => item.id === "stable-log");
+function getCurriculum(curriculums: CurriculumDefinition[], curriculumId: string): CurriculumDefinition {
+  const selectedCurriculum = curriculums.find((item) => item.id === curriculumId);
+  const baselineCurriculum = curriculums.find((item) => item.id === "stable-log") ?? curriculums[0];
 
   if (!selectedCurriculum || !baselineCurriculum) {
     throw new Error(`존재하지 않는 mock 커리큘럼입니다. ${curriculumId}`);
@@ -540,8 +551,7 @@ type InterpretedStudentRequest = {
   currentStepConcepts: string[];
 };
 
-function createTodaySessionFromContext(context: StudentContext): TodaySession {
-  const curriculum = getCurriculum(context.selectedCurriculumId);
+function createTodaySessionFromContext(context: StudentContext, curriculum: CurriculumDefinition): TodaySession {
   const currentStep = getRequiredStep(curriculum, context.currentStepId);
   const { selectedItems, delayedItems } = fitItemsToMaxMinutes(currentStep.items, context.maxSessionMinutes);
 
