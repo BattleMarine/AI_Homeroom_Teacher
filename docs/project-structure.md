@@ -12,13 +12,12 @@
 2. 진도 조율 로직은 화면 코드와 분리한다.
 3. 학습 후 체크 분석은 별도 모듈로 둔다.
 4. AI 담임 문장은 규칙 기반 결과를 설명하는 계층으로 둔다.
-5. 초기에는 mock data와 localStorage 중심으로 단순하게 유지한다.
+5. 화면 규칙은 백엔드 API로 일원화하고, 저장소는 memory와 PostgreSQL 구현을 같은 인터페이스로 교체한다.
 ```
 
 ## 제안 폴더 트리
 
-아래 트리는 향후 구현 시 기준으로 삼을 구조입니다.
-현재는 폴더 일부만 먼저 만들어 두었고, 실제 파일은 구현 단계에서 생성합니다.
+아래 트리는 역할을 설명하기 위한 축약 구조입니다. 실제 파일 목록의 기준은 저장소이며, 특히 `apps/api/src/db`, `progress`, `student-curriculum`과 `apps/api/src/db/migrations`가 현재 PostgreSQL 구현을 담당합니다.
 
 ```text
 AI_Homeroom_Teacher/
@@ -43,6 +42,16 @@ AI_Homeroom_Teacher/
         course-catalog/
           course-catalog.types.ts
           course-catalog.file-repository.ts
+          course-catalog.postgres-repository.ts
+        db/
+          client.ts
+          schema.ts
+          migrate.ts
+          seed.ts
+          migrations/
+        student-curriculum/
+          student-curriculum.types.ts
+          student-curriculum.postgres-repository.ts
         curriculum-recommendation/
           curriculum-recommendation.types.ts
           curriculum-recommendation.service.ts
@@ -120,7 +129,7 @@ AI_Homeroom_Teacher/
 | `docs/` | 구현 전 설계 문서와 이후 개발 참고 문서를 관리합니다. |
 | `public/` | 정적 이미지, 아이콘, 데모용 공개 자산을 둡니다. |
 | `src/` | 실제 애플리케이션 코드를 둡니다. |
-| `apps/api/` | 프론트엔드와 분리된 HTTP API 서버를 둡니다. 초기에는 학생별 메모리 mock 상태와 진도 응답을 반환하고, 이후 인증·DB·LLM 오케스트레이터를 추가합니다. |
+| `apps/api/` | 프론트엔드와 분리된 HTTP API, 규칙 엔진, memory/PostgreSQL 저장소를 둡니다. 인증과 실제 LLM 오케스트레이터는 아직 미구현입니다. |
 
 ## `src/app`
 
@@ -236,15 +245,13 @@ AI 담임 코멘트 생성
 
 ## `src/storage`
 
-초기에는 서버와 DB를 두지 않고 localStorage를 우선 사용합니다.
+브라우저 저장소는 데모 화면 단계처럼 서버 도메인 상태가 아닌 UI 복원 정보에만 사용합니다. 학생 커리큘럼·진도·피드백·조율 상태는 백엔드 API가 관리합니다.
 
-예상 책임:
+허용 책임:
 
 ```text
-선택된 커리큘럼 저장
-학생 진행 상태 저장
-학습 후 체크 결과 저장
-다음 수업 조율 결과 저장
+현재 데모 화면 단계 저장
+비민감 UI 환경설정 저장
 ```
 
 ## `src/types`

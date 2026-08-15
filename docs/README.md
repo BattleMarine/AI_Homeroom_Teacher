@@ -27,10 +27,14 @@ AI 담임이 사전 정의된 커리큘럼을 기반으로 오늘 수업을 편�
 | [curriculum-recommendation-algorithm.md](./curriculum-recommendation-algorithm.md) | 강좌 카탈로그를 이용한 규칙 기반 커리큘럼 추천 조건, 처리 순서, 한계와 DB 전환 지점을 정의합니다. |
 | [backend-development-brief.md](./backend-development-brief.md) | 백엔드 개발 세션이 알아야 할 제품 목표, 책임 경계, 구현 단계, 품질·보안 기준을 정리합니다. |
 | [database-development-plan.md](./database-development-plan.md) | PostgreSQL 기초 테이블, 저장소 계층, 기존 API의 DB 전환 순서와 완료 기준을 정리합니다. |
+| [student-curriculum-database-schema.md](./student-curriculum-database-schema.md) | 현재 학생별 커리큘럼·버전·실행 상태 스키마와 데이터 원본 책임을 정리합니다. |
+| [database-operations.md](./database-operations.md) | 로컬 PostgreSQL 실행, 마이그레이션, seed, 검증과 초기화 절차를 제공합니다. |
+| [postgres-frontend-read-model-design.md](./postgres-frontend-read-model-design.md) | PostgreSQL 현재 버전을 학습 화면 API의 원본으로 연결하는 설계를 정의합니다. |
 | [teacher-llm-api.md](./teacher-llm-api.md) | AI 담임 LLM API의 mock 구현, 교체 가능한 서비스 계약, 실제 LLM 전환 원칙을 정리합니다. |
 | [prompts/backend-development-session.md](./prompts/backend-development-session.md) | 별도 백엔드 개발 세션을 시작할 때 사용할 작업 프롬프트를 제공합니다. |
 | [claims/README.md](./claims/README.md) | 프론트엔드와 백엔드 사이의 문제를 클레임 문서로 기록하고 응답하는 협업 규칙을 정리합니다. |
-| [claims/lesson-feedback-proxy-issue.md](./claims/lesson-feedback-proxy-issue.md) | 강의별 체크 API 전달 실패의 재현 결과와 프론트·백엔드 확인 요청을 기록합니다. |
+
+`docs/claims/`의 개별 문서는 로컬 세션 간 인수인계 기록이므로 Git에서 제외합니다. 저장소에는 협업 규칙인 `claims/README.md`만 추적합니다.
 
 ## 문서 작성 기준
 
@@ -56,9 +60,12 @@ localStorage 기반 데모 상태 저장 완료
 AI 담임 답변 안에 카드가 첨부되는 UI 구현 완료
 채팅 흐름에 맞춘 컴팩트 첨부 카드 UI 구현 완료
 채팅 메시지 누적 및 AI 준비 중 점 애니메이션 구현 완료
-오늘 수업·커리큘럼 맵·채팅 메시지·강의별 체크 mock API 연결 완료
-커리큘럼 선택·학생 상태·강의 상세·진행 보고를 서버 상태 기반 mock API로 이전 중
+오늘 수업·커리큘럼 맵·채팅 메시지·강의별 체크 API 연결 완료
+커리큘럼 선택·학생 상태·강의 상세·진행 보고를 백엔드 상태로 이전 완료
 AI 담임 대화 API의 mock LLM 어댑터 구현 완료
+PostgreSQL 실행·마이그레이션·seed와 핵심 상태 영속화 완료
+학생별 커리큘럼 버전, sourceId, 프레젠테이션 정보와 원자적 선택 구현 완료
+PostgreSQL 현재 버전의 학습 화면 조회 원본 전환 예정
 LLM API 연결 미구현
 ```
 
@@ -77,6 +84,12 @@ src/
     teacher-response/
   mock/
   types/
+apps/
+  api/
+    src/
+      db/
+      progress/
+      student-curriculum/
 ```
 
 구현이 진행되면서 일부 초기 설계용 폴더는 아직 사용하지 않을 수 있습니다.

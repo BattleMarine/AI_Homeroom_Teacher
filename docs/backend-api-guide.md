@@ -1,8 +1,8 @@
-# 백엔드 Mock API 호출 가이드
+# 백엔드 API 호출 가이드
 
 ## 목적
 
-이 문서는 프론트엔드가 AI 담임 백엔드 mock API를 실제로 호출하기 위한 계약입니다.
+이 문서는 프론트엔드가 AI 담임 백엔드 API를 호출하기 위한 계약입니다. 실제 LLM 응답은 아직 mock이지만, 서버 상태는 실행 설정에 따라 메모리 또는 PostgreSQL에 저장됩니다.
 
 경로, HTTP 메서드, 요청 본문, 쿼리 문자열, 성공·실패 상태는 `apps/api/src/app.ts`의 현재 구현과 일치합니다. 프론트는 이 문서의 응답을 렌더링하고, 진도·다음 강의·조율 결과를 자체적으로 다시 계산하지 않습니다.
 
@@ -21,7 +21,7 @@ export STUDENT_ID="000"
 
 ### 학생 식별자
 
-`studentId`는 인증 전 mock 단계의 임시 상태 키입니다.
+`studentId`는 인증 도입 전의 임시 상태 키입니다.
 
 ```text
 쿼리 API: ?studentId={studentId}
@@ -29,19 +29,19 @@ export STUDENT_ID="000"
 생략 시: 000
 ```
 
-같은 학생 흐름에서는 모든 API 호출에 동일한 `studentId`를 사용해야 합니다. 다른 값으로 호출하면 별도의 메모리 mock 상태가 생성됩니다.
+같은 학생 흐름에서는 모든 API 호출에 동일한 `studentId`를 사용해야 합니다. 다른 값은 별도 학생 상태로 처리됩니다.
 
 ### 저장 범위
 
 ```text
-상태는 API 서버 프로세스 메모리에만 저장된다.
-API 서버를 재시작하면 모든 studentId의 상태가 초기값으로 돌아간다.
-DB·로그인 도입 전에는 다른 기기·다른 서버 프로세스와 상태를 공유하지 않는다.
+PERSISTENCE_MODE=memory 또는 미설정: API 프로세스 메모리에 저장되어 재시작하면 초기화된다.
+PERSISTENCE_MODE=postgres: DATABASE_URL로 연결한 PostgreSQL에 저장되어 재시작 뒤에도 유지된다.
+인증 미도입: studentId는 클라이언트가 전달하는 임시 식별자이므로 보안 경계로 사용하지 않는다.
 ```
 
 ## 공통 응답과 오류
 
-성공 응답에는 항상 `dataSource: "mock"`이 포함됩니다.
+현재 성공 응답에는 레거시 계약인 `dataSource: "mock"`이 포함됩니다. PostgreSQL 사용 여부를 판별하는 값이 아니므로 화면 분기에는 사용하지 않습니다. 저장소 모드는 서버의 `PERSISTENCE_MODE` 설정과 시작 로그로 확인합니다.
 
 | 상태 | 의미 | 프론트 처리 |
 | --- | --- | --- |
@@ -260,7 +260,7 @@ compressed-log
 practice-log
 ```
 
-성공 응답은 `studentContext`, `session`, `curriculumMap`을 함께 반환합니다. 선택을 변경하면 해당 `studentId`의 강의별 완료 기록과 조율 상태는 선택한 커리큘럼의 초기 mock 상태로 다시 시작합니다.
+성공 응답은 `studentContext`, `session`, `curriculumMap`을 함께 반환합니다. 선택을 변경하면 해당 `studentId`의 강의별 완료 기록과 조율 상태는 선택한 커리큘럼의 초기 상태로 다시 시작합니다.
 
 존재하지 않는 `curriculumId`는 `404`와 아래 응답을 반환합니다.
 
@@ -659,7 +659,7 @@ LLM 또는 클라이언트가 규칙 기반 커리큘럼 도구를 실행할 때
 GET /api/curriculum-plans/current?studentId={studentId}
 ```
 
-`apply_curriculum_plan`으로 mock 상태에 보관한 계획을 반환합니다. 아직 적용 계획이 없으면 `404`를 반환합니다.
+`apply_curriculum_plan`으로 학생 진도 저장소에 보관한 계획을 반환합니다. 아직 적용 계획이 없으면 `404`를 반환합니다.
 ## 17. 상태 변경 공통 응답
 
 상태를 변경하는 API는 기존 응답 필드를 유지하면서 공통 `snapshot`을 함께 반환합니다. `snapshot`에는 `revision`, `studentContext`, `curriculumPlan`, `todaySession`, `curriculumMap`, `progress`가 포함됩니다.

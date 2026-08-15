@@ -14,7 +14,7 @@
 | `compress_curriculum_plan` | 기준 계획과 동일한 결과 반환 | 선택·복습 구간 축소 |
 | `extend_curriculum_plan` | 기준 계획과 동일한 결과 반환 | 하루 부담 완화, 복습 여유 삽입 |
 | `assess_curriculum_deadline` | 최소 필요 일수와 하루 필요 시간을 계산 | 휴일·학습 가능 요일 반영 |
-| `apply_curriculum_plan` | 계획을 학생별 서버 메모리에 보관 | DB 저장 및 오늘 수업 운영 엔진 반영 |
+| `apply_curriculum_plan` | 계획을 학생별 진도 저장소에 반영 | 실제 압축·완화 정책 확장 |
 
 ## 도구 실행
 
@@ -39,13 +39,13 @@ POST /api/curriculum-tools/execute
 
 응답의 `recommendation`은 기존 `POST /api/curriculum-recommendations`와 같은 규칙 기반 계획입니다. `deadline`에는 기한 위험 판단에 필요한 최소 일수와 하루 필요 시간이 별도로 정리됩니다.
 
-`apply_curriculum_plan` 실행 뒤에는 다음 API로 현재 mock 상태의 적용 계획을 확인할 수 있습니다.
+`apply_curriculum_plan` 실행 뒤에는 다음 API로 현재 적용 계획을 확인할 수 있습니다.
 
 ```text
 GET /api/curriculum-plans/current?studentId={studentId}
 ```
 
-상태는 API 서버 메모리에만 보관되며, 재시작하면 사라집니다. 아직 오늘 수업·보강·연기 상태를 바꾸지 않습니다.
+`PERSISTENCE_MODE=memory`이면 상태는 API 서버 메모리에 보관되어 재시작 시 초기화됩니다. `postgres`이면 `DATABASE_URL`로 연결한 PostgreSQL의 학생 진도 상태에 저장됩니다. 이 도구는 기준 계획을 적용하며, 보강·연기는 별도의 진도 운영 도구가 담당합니다.
 
 ## mock LLM 연동
 

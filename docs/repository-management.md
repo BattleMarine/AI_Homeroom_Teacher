@@ -48,9 +48,13 @@ CREDENTIALS.md
 *.private.md
 docs/private/
 docs/secrets/
+docs/claims/**
+!docs/claims/README.md
 ```
 
 공유가 필요한 문서는 실제 값 없이 구조와 작성 방법만 남깁니다.
+
+`docs/claims/`의 개별 요청·응답 문서는 로컬 세션 간 협업 기록이므로 커밋하지 않습니다. 협업 규칙만 `docs/claims/README.md`로 추적합니다. 개인 메모는 `*.local.md`, 비밀 문서는 `*.secret.md` 또는 `*.private.md` 접미사를 사용합니다.
 
 ## 로그 관리
 

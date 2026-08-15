@@ -77,13 +77,13 @@ targetDays: 목표 완료 일수
 
 `subjectAreas`와 `unitNames`도 강의 제목에서 정규화한 임시 값이므로, 공식 강좌 데이터가 들어오면 이를 우선한다.
 
-## DB 전환 지점
+## 저장소 전환 지점
 
-`CourseCatalogRepository` 인터페이스가 파일 원본을 감싼다. DB 전환 시 파일 저장소를 DB 저장소로 교체하고, 추천 서비스와 HTTP API 계약은 유지한다.
+`CourseCatalogRepository` 인터페이스가 파일 또는 PostgreSQL 원본을 감쌉니다. `PERSISTENCE_MODE`에 따라 구현을 교체하고, 추천 서비스와 HTTP API 계약은 유지합니다.
 
 ```text
-현재: createFileCourseCatalogRepository()
-추후: createDatabaseCourseCatalogRepository()
+메모리 개발 모드: createFileCourseCatalogRepository()
+PostgreSQL 모드: createPostgresCourseCatalogRepository()
 ```
 
 ## API 가이드

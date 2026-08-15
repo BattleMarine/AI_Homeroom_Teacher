@@ -1,6 +1,6 @@
 # 진도 운영 도구 API
 
-적용된 커리큘럼 계획 위에서 보강 삽입, 강의 연기, 일정 영향 계산을 수행한다. 원본 커리큘럼을 삭제하지 않고 학생별 서버 메모리의 운영 조정 상태만 변경한다.
+적용된 커리큘럼 계획 위에서 보강 삽입, 강의 연기, 일정 영향 계산을 수행한다. 원본 커리큘럼 버전을 변경하지 않고 학생별 진도 실행 상태만 변경한다.
 
 ```text
 POST /api/progress-tools/execute
@@ -27,7 +27,7 @@ POST /api/progress-tools/execute
 }
 ```
 
-`apply_curriculum_plan`을 실행하면 카탈로그 기반 계획이 실제 `GET /api/today-session`, `GET /api/curriculum-map` 조회 결과에 반영된다. 서버를 재시작하면 계획과 조정 상태는 사라진다.
+`apply_curriculum_plan`을 실행하면 카탈로그 기반 계획이 `GET /api/today-session`, `GET /api/curriculum-map` 조회 결과에 반영됩니다. `PERSISTENCE_MODE=memory`이면 서버 재시작 시 상태가 초기화되고, `postgres`이면 PostgreSQL에 유지됩니다.
 
 ## 오늘 수업 조율 제안
 
