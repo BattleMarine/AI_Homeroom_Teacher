@@ -4,7 +4,7 @@
 
 이 문서는 AI 담임 데모 백엔드의 PostgreSQL 개발 환경을 실행하고, 스키마·기준 데이터를 재현하며, 학습 상태 복구를 확인하는 절차를 설명합니다.
 
-PostgreSQL은 강좌·강의 카탈로그, 학생별 학습 상태와 revision, 강의별 피드백 이력, 오늘 수업 조율 제안을 저장합니다. 사전 정의 커리큘럼과 규칙 기반 진도 판단 로직은 계속 애플리케이션 코드가 담당합니다.
+PostgreSQL은 강좌·강의 카탈로그, 학생별 커리큘럼과 버전 이력, 학생별 학습 상태와 revision, 강의별 피드백 이력, 오늘 수업 조율 제안을 저장합니다. 규칙 기반 진도 판단 로직은 계속 애플리케이션 코드가 담당합니다.
 
 ## 준비
 
@@ -39,10 +39,14 @@ pnpm --filter @ai-homeroom/api db:check
 ```
 
 - `db:migrate`: `apps/api/src/db/migrations/`의 SQL을 순서대로 한 번만 적용합니다.
-- `db:seed`: 데모 학생 `000`과 JSON 기준 강좌·강의 목록을 멱등 방식으로 적재합니다.
+- `db:seed`: 데모 학생 `000`, JSON 기준 강좌·강의 목록, 안정형·압축형·문제적용형 후보 커리큘럼을 멱등 방식으로 적재합니다.
 - `db:check`: `SELECT 1`로 DB 연결을 확인합니다.
 
 `db:migrate`와 `db:seed`는 반복 실행해도 안전합니다.
+
+후보 커리큘럼은 모두 `candidate` 상태로 생성됩니다. 학생이 선택하면 같은 과목의 기존 `active` 후보는 다시 `candidate`가 되고, 선택한 하나만 `active`가 됩니다. 표시명은 기존 API와 동일하게 `문제적용형`을 사용하며 내부 ID `practice-log`는 유지합니다.
+
+구조를 바꾸는 작업은 기존 `curriculum_versions`·`curriculum_steps`·`curriculum_items` 행을 수정하지 않습니다. 새 버전을 저장한 뒤 `student_curricula.current_version_id`와 revision을 같은 트랜잭션에서 갱신합니다. `lecture` 항목에는 존재하는 `lessons.id`가 필수이며, 기준 강좌에 재생 대상이 비어 있을 때 seed는 결정적인 `mock-video:<lessonId>` 재생 대상을 DB에 보완합니다.
 
 ## API를 PostgreSQL 모드로 실행
 
@@ -72,6 +76,8 @@ DB 통합 테스트는 다음을 검증합니다.
 - 커리큘럼 선택과 강의 피드백 뒤 서버 재시작 상태 복구
 - revision 증가와 피드백 이벤트 기록
 - 조율안의 한 번만 확정 처리와 오래된 revision의 `409` 응답
+- 후보 커리큘럼 하나만 활성화되는 선택 처리
+- 커리큘럼 새 버전 저장 시 이전 버전 보존, 잘못된 강의 연결의 전체 롤백
 
 ## 개발 데이터 초기화
 

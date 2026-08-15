@@ -1,5 +1,7 @@
 import { createFileCourseCatalogRepository } from "../course-catalog/course-catalog.file-repository.js";
 import { getDatabaseConfig } from "../config.js";
+import { createPostgresStudentCurriculumRepository } from "../student-curriculum/student-curriculum.postgres-repository.js";
+import { seedDemoStudentCurricula } from "../student-curriculum/student-curriculum.seed.js";
 import { createDatabaseClient } from "./client.js";
 
 const database = createDatabaseClient(getDatabaseConfig().connectionString);
@@ -10,8 +12,8 @@ try {
   await database.withTransaction(async (client) => {
     await client.query(
       `INSERT INTO students (id, display_name, status, created_at, updated_at)
-       VALUES ($1, $2, 'active', $3, $3)
-       ON CONFLICT (id) DO UPDATE SET updated_at = EXCLUDED.updated_at`,
+       VALUES ($1, $2, 'demo', $3, $3)
+       ON CONFLICT (id) DO UPDATE SET display_name = EXCLUDED.display_name, status = EXCLUDED.status, updated_at = EXCLUDED.updated_at`,
       ["000", "데모 학생", now],
     );
     await client.query(
@@ -50,7 +52,7 @@ try {
           playback_target_id=EXCLUDED.playback_target_id, updated_at=EXCLUDED.updated_at`,
         [lesson.id, lesson.courseId, lesson.sequence, lesson.lectureNumber, lesson.title, lesson.lessonType,
           JSON.stringify(lesson.subjectAreas), JSON.stringify(lesson.unitNames), lesson.duration.display,
-          lesson.duration.seconds, lesson.sourceUrl, lesson.playbackTargetId, now],
+          lesson.duration.seconds, lesson.sourceUrl, lesson.playbackTargetId ?? `mock-video:${lesson.id}`, now],
       );
     }
     const actual = await client.query<{ count: string; total: string }>(
@@ -61,7 +63,8 @@ try {
       throw new Error("강좌 카탈로그 seed 검증에 실패했습니다.");
     }
   });
-  console.log(`기준 학생과 강좌 ${catalog.course.id}의 ${catalog.lessons.length}개 강의를 적재했습니다.`);
+  await seedDemoStudentCurricula(createPostgresStudentCurriculumRepository(database.pool), catalog);
+  console.log(`기준 학생과 강좌 ${catalog.course.id}의 ${catalog.lessons.length}개 강의, 후보 커리큘럼 3개를 적재했습니다.`);
 } finally {
   await database.close();
 }

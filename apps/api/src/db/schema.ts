@@ -1,4 +1,5 @@
-import { index, integer, jsonb, pgTable, text, timestamp, uniqueIndex, uuid, varchar } from "drizzle-orm/pg-core";
+import { boolean, check, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex, uuid, varchar } from "drizzle-orm/pg-core";
+import { sql } from "drizzle-orm";
 
 export const students = pgTable("students", {
   id: varchar("id", { length: 100 }).primaryKey(),
@@ -17,7 +18,7 @@ export const courses = pgTable("courses", {
   title: varchar("title", { length: 500 }).notNull(),
   primarySubject: varchar("primary_subject", { length: 100 }).notNull(),
   includedSubjects: jsonb("included_subjects").notNull(),
-  curriculumYear: integer("curriculum_year").notNull(),
+  curriculumYear: integer("curriculum_year"),
   lessonCount: integer("lesson_count").notNull(),
   orientationCount: integer("orientation_count").notNull(),
   contentLessonCount: integer("content_lesson_count").notNull(),
@@ -37,7 +38,7 @@ export const lessons = pgTable("lessons", {
   lessonType: varchar("lesson_type", { length: 30 }).notNull(),
   subjectAreas: jsonb("subject_areas").notNull(),
   unitNames: jsonb("unit_names").notNull(),
-  durationDisplay: varchar("duration_display", { length: 50 }).notNull(),
+  durationDisplay: varchar("duration_display", { length: 50 }),
   durationSeconds: integer("duration_seconds").notNull(),
   sourceUrl: text("source_url"),
   playbackTargetId: varchar("playback_target_id", { length: 200 }),
@@ -56,6 +57,58 @@ export const studentLearningStates = pgTable("student_learning_states", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
 });
+
+export const studentCurricula = pgTable("student_curricula", {
+  id: varchar("id", { length: 200 }).primaryKey(),
+  studentId: varchar("student_id", { length: 100 }).notNull().references(() => students.id),
+  subjectCode: varchar("subject_code", { length: 100 }).notNull(),
+  title: varchar("title", { length: 500 }).notNull(),
+  status: varchar("status", { length: 20 }).notNull(),
+  currentVersionId: varchar("current_version_id", { length: 200 }),
+  revision: integer("revision").notNull(),
+  stateJson: jsonb("state_json").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
+}, (table) => [
+  uniqueIndex("student_curricula_active_subject_key").on(table.studentId, table.subjectCode).where(sql`${table.status} = 'active'`),
+  index("student_curricula_student_id_idx").on(table.studentId),
+]);
+
+export const curriculumVersions = pgTable("curriculum_versions", {
+  id: varchar("id", { length: 200 }).primaryKey(),
+  studentCurriculumId: varchar("student_curriculum_id", { length: 200 }).notNull().references(() => studentCurricula.id),
+  versionNumber: integer("version_number").notNull(),
+  changeReason: varchar("change_reason", { length: 50 }).notNull(),
+  changeSummary: text("change_summary"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+}, (table) => [uniqueIndex("curriculum_versions_curriculum_version_key").on(table.studentCurriculumId, table.versionNumber)]);
+
+export const curriculumSteps = pgTable("curriculum_steps", {
+  id: varchar("id", { length: 200 }).primaryKey(),
+  curriculumVersionId: varchar("curriculum_version_id", { length: 200 }).notNull().references(() => curriculumVersions.id),
+  sequence: integer("sequence").notNull(),
+  title: varchar("title", { length: 500 }).notNull(),
+  goal: text("goal"),
+  conceptTags: jsonb("concept_tags").notNull(),
+  estimatedMinutes: integer("estimated_minutes").notNull(),
+}, (table) => [uniqueIndex("curriculum_steps_version_sequence_key").on(table.curriculumVersionId, table.sequence)]);
+
+export const curriculumItems = pgTable("curriculum_items", {
+  id: varchar("id", { length: 200 }).primaryKey(),
+  curriculumStepId: varchar("curriculum_step_id", { length: 200 }).notNull().references(() => curriculumSteps.id),
+  sequence: integer("sequence").notNull(),
+  kind: varchar("kind", { length: 20 }).notNull(),
+  lessonId: varchar("lesson_id", { length: 200 }).references(() => lessons.id),
+  title: varchar("title", { length: 500 }).notNull(),
+  description: text("description"),
+  conceptTags: jsonb("concept_tags").notNull(),
+  estimatedMinutes: integer("estimated_minutes").notNull(),
+  required: boolean("required").notNull(),
+  reason: text("reason"),
+}, (table) => [
+  uniqueIndex("curriculum_items_step_sequence_key").on(table.curriculumStepId, table.sequence),
+  check("curriculum_items_lecture_requires_lesson_check", sql`${table.kind} <> 'lecture' OR ${table.lessonId} IS NOT NULL`),
+]);
 
 export const lessonFeedbackEvents = pgTable("lesson_feedback_events", {
   id: uuid("id").primaryKey(),

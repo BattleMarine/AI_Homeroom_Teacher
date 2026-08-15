@@ -18,6 +18,7 @@ import { progressToolNames, type ProgressToolInput, type ProgressToolName, type 
 import { readMockLessonPlaybackAsset } from "./lesson-playback/mock-lesson-playback.service.js";
 import { createMemoryProgressService } from "./progress/progress.memory-service.js";
 import type { ProgressService } from "./progress/progress.types.js";
+import type { StudentCurriculumRepository } from "./student-curriculum/student-curriculum.types.js";
 import { createTeacherLlmService } from "./teacher-llm/teacher-llm.service.js";
 import type { TeacherLlmService } from "./teacher-llm/teacher-llm.types.js";
 
@@ -187,6 +188,7 @@ type AppDependencies = {
   curriculumRecommendationService?: CurriculumRecommendationService;
   curriculumToolService?: CurriculumToolService;
   progressToolService?: ProgressToolService;
+  studentCurriculumRepository?: StudentCurriculumRepository;
 };
 
 export function buildApp({
@@ -196,6 +198,7 @@ export function buildApp({
   curriculumRecommendationService,
   curriculumToolService,
   progressToolService,
+  studentCurriculumRepository,
 }: AppDependencies = {}) {
   const app = Fastify({ logger: true });
   const recommendationService =
@@ -312,16 +315,35 @@ export function buildApp({
     const studentId = getStudentId(request.query.studentId);
     return { dataSource: "mock", snapshot: await createLearningSnapshot(studentId) };
   });
-  app.get<{ Querystring: StudentQuery }>("/api/curriculums", async (request) => ({
-    dataSource: "mock",
-    curriculums: await progressService.listCurriculums(getStudentId(request.query.studentId)),
-  }));
+  app.get<{ Querystring: StudentQuery }>("/api/curriculums", async (request) => {
+    const studentId = getStudentId(request.query.studentId);
+    const curriculums = await progressService.listCurriculums(studentId);
+    const storedCurriculums = studentCurriculumRepository
+      ? await studentCurriculumRepository.listForStudent(studentId)
+      : [];
+    if (storedCurriculums.length === 0) return { dataSource: "mock", curriculums };
+    return {
+      dataSource: "mock",
+      curriculums: curriculums.map((curriculum) => {
+        const stored = storedCurriculums.find((candidate) => candidate.id === curriculum.id);
+        if (!stored) return curriculum;
+        return {
+          ...curriculum,
+          selected: stored.status === "active",
+          currentStepId: stored.status === "active" ? getStoredCurrentStepId(stored.state) : null,
+        };
+      }),
+    };
+  });
 
   app.post<{ Body: CurriculumSelectionRequest }>(
     "/api/student-context/curriculum",
     { schema: { body: curriculumSelectionRequestSchema } },
     async (request, reply) => {
       const studentId = getStudentId(request.body.studentId);
+      if (studentCurriculumRepository) {
+        await studentCurriculumRepository.selectCandidate(studentId, request.body.curriculumId);
+      }
       const studentContext = await progressService.selectCurriculum(studentId, request.body.curriculumId);
 
       if (!studentContext) {
@@ -512,4 +534,8 @@ function isProgressToolName(tool: string): tool is ProgressToolName {
 
 function isStateChangingProgressTool(tool: ProgressToolName) {
   return tool === "insert_remediation" || tool === "defer_learning_item";
+}
+
+function getStoredCurrentStepId(state: Record<string, unknown>) {
+  return typeof state.currentStepId === "string" ? state.currentStepId : null;
 }

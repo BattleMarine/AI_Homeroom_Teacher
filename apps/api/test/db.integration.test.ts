@@ -5,6 +5,7 @@ import { createDatabaseClient } from "../src/db/client.js";
 import { createPostgresCourseCatalogRepository } from "../src/course-catalog/course-catalog.postgres-repository.js";
 import { createPostgresProgressStateRepository } from "../src/progress/progress.postgres-repository.js";
 import { createPostgresProgressService } from "../src/progress/progress.postgres-service.js";
+import { createPostgresStudentCurriculumRepository } from "../src/student-curriculum/student-curriculum.postgres-repository.js";
 
 const databaseUrl = process.env.DATABASE_URL;
 const databaseTest = databaseUrl ? test : test.skip;
@@ -118,4 +119,108 @@ databaseTest("PostgreSQL 조율안 확정은 revision 충돌과 중복 확정을
   });
   assert.equal(staleConfirmation.statusCode, 409);
   assert.equal(staleConfirmation.json().snapshot.revision, 2);
+});
+
+databaseTest("학생별 커리큘럼은 후보 선택, 버전 보존, 잘못된 강의 연결 롤백을 처리한다", async (context) => {
+  const database = createDatabaseClient(databaseUrl!);
+  const repository = createPostgresStudentCurriculumRepository(database.pool);
+  const studentId = "db-curriculum-student";
+  const otherStudentId = "db-curriculum-other-student";
+  const curriculumId = "db-curriculum-a";
+  const otherCurriculumId = "db-curriculum-b";
+  const lesson = await database.pool.query<{ id: string }>(
+    "SELECT id FROM lessons WHERE playback_target_id IS NOT NULL ORDER BY sequence ASC LIMIT 1",
+  );
+  assert.ok(lesson.rows[0]);
+
+  context.after(async () => {
+    for (const id of [curriculumId, otherCurriculumId]) {
+      await database.pool.query(
+        "DELETE FROM curriculum_items WHERE curriculum_step_id IN (SELECT id FROM curriculum_steps WHERE curriculum_version_id IN (SELECT id FROM curriculum_versions WHERE student_curriculum_id = $1))",
+        [id],
+      );
+      await database.pool.query(
+        "DELETE FROM curriculum_steps WHERE curriculum_version_id IN (SELECT id FROM curriculum_versions WHERE student_curriculum_id = $1)",
+        [id],
+      );
+      await database.pool.query("UPDATE student_curricula SET current_version_id = NULL WHERE id = $1", [id]);
+      await database.pool.query("DELETE FROM curriculum_versions WHERE student_curriculum_id = $1", [id]);
+      await database.pool.query("DELETE FROM student_curricula WHERE id = $1", [id]);
+    }
+    await database.pool.query("DELETE FROM students WHERE id IN ($1, $2)", [studentId, otherStudentId]);
+    await database.close();
+  });
+
+  const initialVersion = {
+    changeReason: "initial" as const,
+    steps: [{
+      sourceId: "step-1",
+      title: "로그의 뜻",
+      goal: "로그의 뜻을 정리합니다.",
+      conceptTags: ["로그"],
+      estimatedMinutes: 20,
+      items: [{
+        sourceId: "item-1",
+        kind: "lecture" as const,
+        lessonId: lesson.rows[0].id,
+        title: "로그의 뜻 강의",
+        description: null,
+        conceptTags: ["로그"],
+        estimatedMinutes: 20,
+        required: true,
+        reason: "초기 학습",
+      }],
+    }],
+  };
+  const initialState = { currentStepId: "step-1", completedStepIds: [], weakConcepts: [] };
+  await repository.seedCandidate({ id: curriculumId, studentId, subjectCode: "math-logarithm", title: "후보 A", state: initialState, version: initialVersion });
+  await repository.seedCandidate({ id: otherCurriculumId, studentId, subjectCode: "math-logarithm", title: "후보 B", state: initialState, version: initialVersion });
+
+  const selected = await repository.selectCandidate(studentId, curriculumId);
+  assert.equal(selected?.status, "active");
+  const selectedOther = await repository.selectCandidate(studentId, otherCurriculumId);
+  assert.equal(selectedOther?.status, "active");
+  const selectedCount = await database.pool.query<{ count: string }>(
+    "SELECT count(*)::text AS count FROM student_curricula WHERE student_id = $1 AND subject_code = 'math-logarithm' AND status = 'active'",
+    [studentId],
+  );
+  assert.equal(selectedCount.rows[0].count, "1");
+
+  const invalidSave = repository.saveNewVersion({
+    studentId,
+    curriculumId: otherCurriculumId,
+    expectedRevision: selectedOther!.revision,
+    state: initialState,
+    version: { ...initialVersion, changeReason: "remediation", steps: [{ ...initialVersion.steps[0], items: [{ ...initialVersion.steps[0].items[0], lessonId: "missing-lesson" }] }] },
+  });
+  await assert.rejects(invalidSave);
+  const afterRollback = await repository.getById(studentId, otherCurriculumId);
+  assert.equal(afterRollback?.currentVersion?.versionNumber, 1);
+  assert.equal(afterRollback?.revision, selectedOther!.revision);
+
+  const saved = await repository.saveNewVersion({
+    studentId,
+    curriculumId: otherCurriculumId,
+    expectedRevision: afterRollback!.revision,
+    state: { ...initialState, currentStepId: "step-2" },
+    version: { ...initialVersion, changeReason: "remediation", changeSummary: "그래프 보강 단계 추가" },
+  });
+  assert.equal(saved?.kind, "saved");
+  if (saved?.kind !== "saved") throw new Error("새 커리큘럼 버전을 저장하지 못했습니다.");
+  assert.equal(saved.curriculum.currentVersion?.versionNumber, 2);
+  assert.equal(saved.curriculum.revision, afterRollback!.revision + 1);
+  const versions = await database.pool.query<{ count: string }>(
+    "SELECT count(*)::text AS count FROM curriculum_versions WHERE student_curriculum_id = $1",
+    [otherCurriculumId],
+  );
+  assert.equal(versions.rows[0].count, "2");
+
+  await repository.seedCandidate({ id: "db-curriculum-isolated", studentId: otherStudentId, subjectCode: "math-logarithm", title: "다른 학생 후보", state: initialState, version: initialVersion });
+  const isolated = await repository.getById(otherStudentId, "db-curriculum-isolated");
+  assert.equal(isolated?.studentId, otherStudentId);
+  await database.pool.query("DELETE FROM curriculum_items WHERE curriculum_step_id IN (SELECT id FROM curriculum_steps WHERE curriculum_version_id IN (SELECT id FROM curriculum_versions WHERE student_curriculum_id = 'db-curriculum-isolated'))");
+  await database.pool.query("DELETE FROM curriculum_steps WHERE curriculum_version_id IN (SELECT id FROM curriculum_versions WHERE student_curriculum_id = 'db-curriculum-isolated')");
+  await database.pool.query("UPDATE student_curricula SET current_version_id = NULL WHERE id = 'db-curriculum-isolated'");
+  await database.pool.query("DELETE FROM curriculum_versions WHERE student_curriculum_id = 'db-curriculum-isolated'");
+  await database.pool.query("DELETE FROM student_curricula WHERE id = 'db-curriculum-isolated'");
 });

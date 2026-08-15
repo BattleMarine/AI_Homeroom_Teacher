@@ -686,8 +686,8 @@ pnpm --filter @ai-homeroom/api test
 
 ### PostgreSQL 개발 저장소
 
-백엔드는 `PERSISTENCE_MODE=postgres`일 때 PostgreSQL 저장소를 사용합니다. 강좌·강의 카탈로그는 DB에서 조회하고, 학생별 학습 상태·revision·강의 피드백 이력·오늘 수업 조율 제안은 서버 재시작 뒤에도 복구됩니다.
+백엔드는 `PERSISTENCE_MODE=postgres`일 때 PostgreSQL 저장소를 사용합니다. 강좌·강의 카탈로그와 데모 학생 `000`의 후보 커리큘럼 3종을 DB에서 조회하며, 학생별 학습 상태·revision·강의 피드백 이력·오늘 수업 조율 제안은 서버 재시작 뒤에도 복구됩니다.
 
-상태 변경은 `student_learning_states`의 revision을 한 번만 증가시키며, 조율 제안 확정은 제안 행과 학습 상태 행을 같은 트랜잭션에서 잠가 중복 확정과 오래된 revision을 방지합니다. 기존 규칙 기반 진도 판단과 HTTP API 응답 계약은 유지합니다.
+커리큘럼은 `student_curricula`와 불변 `curriculum_versions`·`curriculum_steps`·`curriculum_items`로 저장합니다. 구조 변경은 새 버전과 함께 트랜잭션으로 저장하고, 강의형 항목은 DB의 실제 `lessons` 행을 반드시 참조합니다. 상태 변경은 `student_learning_states`의 revision을 한 번만 증가시키며, 조율 제안 확정은 제안 행과 학습 상태 행을 같은 트랜잭션에서 잠가 중복 확정과 오래된 revision을 방지합니다. 기존 규칙 기반 진도 판단과 HTTP API 응답 계약은 유지합니다.
 
 로컬 PostgreSQL 실행, 마이그레이션, seed, 복구와 초기화 절차는 [database-operations.md](./docs/database-operations.md)를 참고합니다.

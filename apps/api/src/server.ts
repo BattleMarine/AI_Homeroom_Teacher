@@ -4,6 +4,7 @@ import { createDatabaseClient } from "./db/client.js";
 import { createPostgresCourseCatalogRepository } from "./course-catalog/course-catalog.postgres-repository.js";
 import { createPostgresProgressStateRepository } from "./progress/progress.postgres-repository.js";
 import { createPostgresProgressService } from "./progress/progress.postgres-service.js";
+import { createPostgresStudentCurriculumRepository } from "./student-curriculum/student-curriculum.postgres-repository.js";
 
 const config = getApiServerConfig();
 const persistenceMode = getPersistenceMode();
@@ -24,6 +25,7 @@ const app = database
   ? buildApp({
       courseCatalogRepository: createPostgresCourseCatalogRepository(database.pool),
       progressService: createPostgresProgressService(createPostgresProgressStateRepository(database.pool)),
+      studentCurriculumRepository: createPostgresStudentCurriculumRepository(database.pool),
     })
   : buildApp();
 
