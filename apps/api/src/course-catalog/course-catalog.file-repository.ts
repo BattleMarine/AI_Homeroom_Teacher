@@ -16,6 +16,10 @@ const courseCatalogFileUrls = [
     "../../../../data/course-catalog/ebsi-2027-suneungwanseong-choeseohee-korean-language-media.json",
     import.meta.url,
   ),
+  new URL(
+    "../../../../data/course-catalog/ebsi-2027-suneungwanseong-kimjehee-english.json",
+    import.meta.url,
+  ),
 ];
 
 export function createFileCourseCatalogRepository(): CourseCatalogRepository {

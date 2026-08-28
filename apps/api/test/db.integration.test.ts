@@ -42,6 +42,10 @@ databaseTest("PostgreSQL 저장소는 카탈로그와 학생 학습 상태를 �
     course.id === "ebsi-2027-suneungwanseong-choeseohee-korean-language-media-all" &&
     course.lessonCount === 36 &&
     course.totalDurationSeconds === 154921), true);
+  assert.equal(catalogResponse.json().courses.some((course: { id: string; lessonCount: number; totalDurationSeconds: number }) =>
+    course.id === "ebsi-2027-suneungwanseong-kimjehee-english-all" &&
+    course.lessonCount === 41 &&
+    course.totalDurationSeconds === 119217), true);
 
   const selectionResponse = await firstApp.inject({
     method: "POST",
