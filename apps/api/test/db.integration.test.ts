@@ -38,6 +38,10 @@ databaseTest("PostgreSQL 저장소는 카탈로그와 학생 학습 상태를 �
   const catalogResponse = await firstApp.inject({ method: "GET", url: "/api/course-catalogs" });
   assert.equal(catalogResponse.statusCode, 200);
   assert.equal(catalogResponse.json().courses[0].lessonCount, 52);
+  assert.equal(catalogResponse.json().courses.some((course: { id: string; lessonCount: number; totalDurationSeconds: number }) =>
+    course.id === "ebsi-2027-suneungwanseong-choeseohee-korean-language-media-all" &&
+    course.lessonCount === 36 &&
+    course.totalDurationSeconds === 154921), true);
 
   const selectionResponse = await firstApp.inject({
     method: "POST",

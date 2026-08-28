@@ -6,30 +6,42 @@ import type {
   CourseCatalogRepository,
 } from "./course-catalog.types.js";
 
-const courseCatalogFileUrl = new URL(
-  "../../../../data/course-catalog/ebsi-2026-suneungwanseong-namchiyeol-math-calculus.json",
-  import.meta.url,
-);
+const defaultCourseCatalogId = "ebsi-2026-suneungwanseong-namchiyeol-math-calculus-all";
+const courseCatalogFileUrls = [
+  new URL(
+    "../../../../data/course-catalog/ebsi-2026-suneungwanseong-namchiyeol-math-calculus.json",
+    import.meta.url,
+  ),
+  new URL(
+    "../../../../data/course-catalog/ebsi-2027-suneungwanseong-choeseohee-korean-language-media.json",
+    import.meta.url,
+  ),
+];
 
 export function createFileCourseCatalogRepository(): CourseCatalogRepository {
-  const catalog = readCourseCatalogFile();
+  const catalogs = courseCatalogFileUrls.map(readCourseCatalogFile);
+  const defaultCatalog = catalogs.find((catalog) => catalog.course.id === defaultCourseCatalogId);
+
+  if (!defaultCatalog) {
+    throw new Error("기준 강좌 카탈로그 파일을 찾을 수 없습니다.");
+  }
 
   return {
     async listCourses() {
-      return [catalog.course];
+      return catalogs.map((catalog) => catalog.course);
     },
 
     async getCourseCatalog(courseId) {
-      return courseId === catalog.course.id ? catalog : undefined;
+      return catalogs.find((catalog) => catalog.course.id === courseId);
     },
 
     async getDefaultCourseCatalog() {
-      return catalog;
+      return defaultCatalog;
     },
   };
 }
 
-function readCourseCatalogFile(): CourseCatalog {
+function readCourseCatalogFile(courseCatalogFileUrl: URL): CourseCatalog {
   const parsedValue: unknown = JSON.parse(readFileSync(courseCatalogFileUrl, "utf8"));
 
   if (!isCourseCatalogDocument(parsedValue)) {

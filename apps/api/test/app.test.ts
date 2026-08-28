@@ -6,6 +6,7 @@ import { createPostgresProgressService } from "../src/progress/progress.postgres
 import type { StudentCurriculumDetail, StudentCurriculumRepository } from "../src/student-curriculum/student-curriculum.types.js";
 
 const calculusCourseId = "ebsi-2026-suneungwanseong-namchiyeol-math-calculus-all";
+const koreanLanguageMediaCourseId = "ebsi-2027-suneungwanseong-choeseohee-korean-language-media-all";
 
 test("PostgreSQL 진도 서비스는 읽기 모델의 sourceId를 규칙 엔진 입력으로 사용한다", async (context) => {
   const curriculum: StudentCurriculumDetail = {
@@ -90,6 +91,8 @@ test("파일 강좌 카탈로그 API가 미적분 강좌와 강의 목록을 반
   assert.equal(listResponse.statusCode, 200);
   assert.equal(listResponse.json().catalogDataSource, "file");
   assert.equal(listResponse.json().courses[0].id, calculusCourseId);
+  assert.equal(listResponse.json().courses.some((course: { id: string; lessonCount: number }) =>
+    course.id === koreanLanguageMediaCourseId && course.lessonCount === 36), true);
 
   const detailResponse = await app.inject({
     method: "GET",
@@ -99,6 +102,14 @@ test("파일 강좌 카탈로그 API가 미적분 강좌와 강의 목록을 반
   assert.equal(detailResponse.statusCode, 200);
   assert.equal(detailResponse.json().courseCatalog.course.lessonCount, 52);
   assert.equal(detailResponse.json().courseCatalog.lessons[0].lessonType, "orientation");
+
+  const koreanDetailResponse = await app.inject({
+    method: "GET",
+    url: `/api/course-catalogs/${koreanLanguageMediaCourseId}`,
+  });
+  assert.equal(koreanDetailResponse.statusCode, 200);
+  assert.equal(koreanDetailResponse.json().courseCatalog.course.totalDurationSeconds, 154921);
+  assert.equal(koreanDetailResponse.json().courseCatalog.lessons.length, 36);
 });
 
 test("규칙 기반 추천 API가 순서를 보존하고 목표 일수 위험을 계산한다", async (context) => {

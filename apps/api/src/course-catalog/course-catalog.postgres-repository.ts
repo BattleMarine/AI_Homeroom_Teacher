@@ -1,6 +1,8 @@
 import type { Pool } from "pg";
 import type { CourseCatalog, CourseCatalogCourse, CourseCatalogLesson, CourseCatalogRepository } from "./course-catalog.types.js";
 
+const defaultCourseCatalogId = "ebsi-2026-suneungwanseong-namchiyeol-math-calculus-all";
+
 export function createPostgresCourseCatalogRepository(pool: Pool): CourseCatalogRepository {
   return {
     async listCourses() {
@@ -15,7 +17,7 @@ export function createPostgresCourseCatalogRepository(pool: Pool): CourseCatalog
       return { course: mapCourse(course), lessons: lessons.rows.map(mapLesson) };
     },
     async getDefaultCourseCatalog() {
-      const courseResult = await pool.query<CourseRow>("SELECT * FROM courses ORDER BY title ASC LIMIT 1");
+      const courseResult = await pool.query<CourseRow>("SELECT * FROM courses WHERE id = $1", [defaultCourseCatalogId]);
       const course = courseResult.rows[0];
       if (!course) throw new Error("기준 강좌 카탈로그가 PostgreSQL에 없습니다. db:seed를 먼저 실행하세요.");
       const lessons = await pool.query<LessonRow>("SELECT * FROM lessons WHERE course_id = $1 ORDER BY sequence ASC", [course.id]);
