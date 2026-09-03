@@ -11,6 +11,7 @@ import type {
   SubjectEnrollmentProposal,
   SubjectEnrollmentProposalInput,
   SubjectEnrollmentProposalResult,
+  SubjectEnrollmentProposalRepository,
 } from "./subject-enrollment.types.js";
 
 const supportedSubjectPrimarySubjects: Record<string, string> = {
@@ -28,6 +29,7 @@ type PendingProposal = {
 export function createSubjectEnrollmentService(
   courseCatalogRepository: CourseCatalogRepository,
   studentCurriculumRepository?: StudentCurriculumRepository,
+  proposalRepository?: SubjectEnrollmentProposalRepository,
 ) {
   const pendingProposals = new Map<string, PendingProposal>();
 
@@ -52,7 +54,7 @@ export function createSubjectEnrollmentService(
       const firstLesson = contentLessons[0];
       const estimatedTotalMinutes = Math.ceil(contentLessons.reduce((total, lesson) => total + lesson.duration.seconds, 0) / 60);
       const proposal: SubjectEnrollmentProposal = {
-        proposalId: `enrollment-draft:${randomUUID()}`,
+        proposalId: `enrollment-proposal:${randomUUID()}`,
         studentId: input.studentId,
         subjectCode: input.subjectCode,
         baseRevision: 0,
@@ -68,15 +70,21 @@ export function createSubjectEnrollmentService(
         },
         scheduleImpact: { kind: "not-assessed", message: "전체 과목 일정 영향은 아직 계산하지 않았습니다." },
         reasonCodes: ["catalog_course_verified", "subject_code_verified", "orientation_excluded"],
-        warnings: ["이 제안은 아직 저장되지 않았습니다. 학생의 명시적 확인 뒤에만 등록할 수 있습니다."],
+        warnings: [proposalRepository
+          ? "학생의 명시적 확인 뒤에만 등록할 수 있습니다."
+          : "이 제안은 아직 저장되지 않았습니다. 학생의 명시적 확인 뒤에만 등록할 수 있습니다."],
         requiresConfirmation: true,
         expiresAt: new Date(Date.now() + proposalLifetimeMs).toISOString(),
       };
-      pendingProposals.set(proposal.proposalId, { input: { ...input }, proposal });
+      if (proposalRepository) await proposalRepository.create(proposal, input);
+      else pendingProposals.set(proposal.proposalId, { input: { ...input }, proposal });
       return { kind: "success", proposal };
     },
 
     async confirm(input: SubjectEnrollmentConfirmationInput): Promise<SubjectEnrollmentConfirmationResult> {
+      if (proposalRepository) {
+        return confirmPersistedProposal(input, proposalRepository, courseCatalogRepository, studentCurriculumRepository);
+      }
       const pending = pendingProposals.get(input.proposalId);
       if (!pending || pending.proposal.studentId !== input.studentId) return { kind: "proposal-not-found" };
       if (pending.confirmation) return pending.confirmation;
@@ -103,6 +111,37 @@ export function createSubjectEnrollmentService(
   };
 }
 
+async function confirmPersistedProposal(
+  input: SubjectEnrollmentConfirmationInput,
+  proposalRepository: SubjectEnrollmentProposalRepository,
+  courseCatalogRepository: CourseCatalogRepository,
+  studentCurriculumRepository: StudentCurriculumRepository | undefined,
+): Promise<SubjectEnrollmentConfirmationResult> {
+  const persisted = await proposalRepository.get(input.studentId, input.proposalId);
+  if (!persisted) return { kind: "proposal-not-found" };
+  if (persisted.status === "confirmed") {
+    if (!persisted.curriculumId || !studentCurriculumRepository) return { kind: "proposal-not-found" };
+    const curriculum = await studentCurriculumRepository.getById(input.studentId, persisted.curriculumId);
+    return curriculum ? { kind: "confirmed", curriculum } : { kind: "proposal-not-found" };
+  }
+  if (persisted.status === "expired") return { kind: "proposal-expired" };
+  if (persisted.status === "cancelled") return { kind: "subject-already-enrolled" };
+  if (!studentCurriculumRepository) return { kind: "persistence-unavailable" };
+
+  const courseCatalog = await courseCatalogRepository.getCourseCatalog(persisted.input.courseId);
+  if (!courseCatalog) return { kind: "proposal-not-found" };
+  const result = await proposalRepository.confirm({
+    ...input,
+    enrollment: createInitialSubjectEnrollment(persisted.proposal, courseCatalog),
+  });
+  if (result.kind === "proposal-not-found") return result;
+  if (result.kind === "proposal-expired") return result;
+  if (result.kind === "revision-conflict") return result;
+  if (result.kind === "subject-already-enrolled") return result;
+
+  const curriculum = await studentCurriculumRepository.getById(input.studentId, result.curriculumId);
+  return curriculum ? { kind: "confirmed", curriculum } : { kind: "proposal-not-found" };
+}
 function createInitialSubjectEnrollment(proposal: SubjectEnrollmentProposal, catalog: CourseCatalog): SubjectEnrollmentInput {
   const lessons = catalog.lessons.filter((lesson) => lesson.lessonType !== "orientation");
   if (!lessons.length) throw new Error("등록할 수업 강의가 없습니다.");

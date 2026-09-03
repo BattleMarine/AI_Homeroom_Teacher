@@ -7,6 +7,7 @@ import { createPostgresCourseCatalogRepository } from "./course-catalog/course-c
 import { createPostgresProgressStateRepository } from "./progress/progress.postgres-repository.js";
 import { createPostgresProgressService } from "./progress/progress.postgres-service.js";
 import { createPostgresStudentCurriculumRepository } from "./student-curriculum/student-curriculum.postgres-repository.js";
+import { createPostgresSubjectEnrollmentProposalRepository } from "./subject-enrollment/subject-enrollment.postgres-repository.js";
 import type { Pool } from "pg";
 
 const config = getApiServerConfig();
@@ -44,6 +45,10 @@ const studentCurriculumRepository = database
   ? createPostgresStudentCurriculumRepository(database.pool)
   : undefined;
 
+const subjectEnrollmentProposalRepository = database
+  ? createPostgresSubjectEnrollmentProposalRepository(database.pool)
+  : undefined;
+
 const app = database
   ? buildApp({
       courseCatalogRepository: createPostgresCourseCatalogRepository(database.pool),
@@ -53,6 +58,7 @@ const app = database
         subjectCode,
       ),
       studentCurriculumRepository,
+      subjectEnrollmentProposalRepository,
     })
   : buildApp();
 

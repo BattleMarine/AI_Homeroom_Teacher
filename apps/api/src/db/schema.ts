@@ -129,6 +129,24 @@ export const lessonFeedbackEvents = pgTable("lesson_feedback_events", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
 }, (table) => [index("lesson_feedback_events_student_subject_idx").on(table.studentId, table.subjectCode)]);
 
+export const subjectEnrollmentProposals = pgTable("subject_enrollment_proposals", {
+  id: varchar("id", { length: 200 }).primaryKey(),
+  studentId: varchar("student_id", { length: 100 }).notNull().references(() => students.id),
+  subjectCode: varchar("subject_code", { length: 100 }).notNull(),
+  courseId: varchar("course_id", { length: 200 }).notNull().references(() => courses.id),
+  baseRevision: integer("base_revision").notNull(),
+  requestJson: jsonb("request_json").notNull(),
+  proposalJson: jsonb("proposal_json").notNull(),
+  status: varchar("status", { length: 20 }).notNull(),
+  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  confirmedAt: timestamp("confirmed_at", { withTimezone: true }),
+  curriculumId: varchar("curriculum_id", { length: 200 }).references(() => studentCurricula.id),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
+}, (table) => [
+  index("subject_enrollment_proposals_student_subject_status_idx").on(table.studentId, table.subjectCode, table.status),
+  index("subject_enrollment_proposals_expires_at_idx").on(table.expiresAt),
+]);
 export const sessionAdjustmentProposals = pgTable("session_adjustment_proposals", {
   id: varchar("id", { length: 200 }).primaryKey(),
   studentId: varchar("student_id", { length: 100 }).notNull().references(() => students.id),

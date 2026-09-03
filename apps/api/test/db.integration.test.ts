@@ -8,6 +8,7 @@ import { createPostgresProgressStateRepository } from "../src/progress/progress.
 import { createPostgresProgressService } from "../src/progress/progress.postgres-service.js";
 import { createMockProgressService } from "../src/progress/progress.mock-service.js";
 import { createPostgresStudentCurriculumRepository } from "../src/student-curriculum/student-curriculum.postgres-repository.js";
+import { createPostgresSubjectEnrollmentProposalRepository } from "../src/subject-enrollment/subject-enrollment.postgres-repository.js";
 import type { Pool } from "pg";
 
 const databaseUrl = process.env.DATABASE_URL;
@@ -627,6 +628,7 @@ databaseTest("과목 등록 확정 API는 제안 확인 뒤 새 과목 snapshot�
   const app = buildApp({
     courseCatalogRepository: createPostgresCourseCatalogRepository(database.pool),
     studentCurriculumRepository,
+    subjectEnrollmentProposalRepository: createPostgresSubjectEnrollmentProposalRepository(database.pool),
     progressServiceResolver: (subjectCode) => createPostgresProgressService(
       createPostgresProgressStateRepository(database.pool, subjectCode),
       studentCurriculumRepository,
@@ -634,6 +636,7 @@ databaseTest("과목 등록 확정 API는 제안 확인 뒤 새 과목 snapshot�
     ),
   });
   const cleanup = async () => {
+    await database.pool.query("DELETE FROM subject_enrollment_proposals WHERE student_id = $1", [studentId]);
     await database.pool.query("DELETE FROM student_learning_states WHERE student_id = $1", [studentId]);
     await database.pool.query("DELETE FROM curriculum_items WHERE curriculum_step_id IN (SELECT cs.id FROM curriculum_steps cs JOIN curriculum_versions cv ON cv.id = cs.curriculum_version_id JOIN student_curricula sc ON sc.id = cv.student_curriculum_id WHERE sc.student_id = $1)", [studentId]);
     await database.pool.query("DELETE FROM curriculum_steps WHERE curriculum_version_id IN (SELECT cv.id FROM curriculum_versions cv JOIN student_curricula sc ON sc.id = cv.student_curriculum_id WHERE sc.student_id = $1)", [studentId]);
@@ -670,4 +673,211 @@ databaseTest("과목 등록 확정 API는 제안 확인 뒤 새 과목 snapshot�
   });
   assert.equal(repeated.statusCode, 200);
   assert.equal(repeated.json().enrollment.id, confirmationResponse.json().enrollment.id);
+});
+
+databaseTest("과목 등록 제안은 재시작 뒤에도 확정되고 콘텐츠 강의만 연결한다", async () => {
+  const studentId = `db-enrollment-restart-${randomUUID()}`;
+  const subjectCode = "english-reading";
+  const createEnrollmentApp = (pool: Pool) => {
+    const studentCurriculumRepository = createPostgresStudentCurriculumRepository(pool);
+    return buildApp({
+      courseCatalogRepository: createPostgresCourseCatalogRepository(pool),
+      studentCurriculumRepository,
+      subjectEnrollmentProposalRepository: createPostgresSubjectEnrollmentProposalRepository(pool),
+      progressServiceResolver: (requestedSubjectCode) => createPostgresProgressService(
+        createPostgresProgressStateRepository(pool, requestedSubjectCode),
+        studentCurriculumRepository,
+        requestedSubjectCode,
+      ),
+    });
+  };
+  const cleanup = async (pool: Pool) => {
+    await pool.query("DELETE FROM subject_enrollment_proposals WHERE student_id = $1", [studentId]);
+    await pool.query("DELETE FROM student_learning_states WHERE student_id = $1", [studentId]);
+    await pool.query("DELETE FROM curriculum_items WHERE curriculum_step_id IN (SELECT cs.id FROM curriculum_steps cs JOIN curriculum_versions cv ON cv.id = cs.curriculum_version_id JOIN student_curricula sc ON sc.id = cv.student_curriculum_id WHERE sc.student_id = $1)", [studentId]);
+    await pool.query("DELETE FROM curriculum_steps WHERE curriculum_version_id IN (SELECT cv.id FROM curriculum_versions cv JOIN student_curricula sc ON sc.id = cv.student_curriculum_id WHERE sc.student_id = $1)", [studentId]);
+    await pool.query("UPDATE student_curricula SET current_version_id = NULL WHERE student_id = $1", [studentId]);
+    await pool.query("DELETE FROM curriculum_versions WHERE student_curriculum_id IN (SELECT id FROM student_curricula WHERE student_id = $1)", [studentId]);
+    await pool.query("DELETE FROM student_curricula WHERE student_id = $1", [studentId]);
+    await pool.query("DELETE FROM students WHERE id = $1", [studentId]);
+  };
+
+  let database = createDatabaseClient(databaseUrl!);
+  let app = createEnrollmentApp(database.pool);
+  try {
+    const proposalResponse = await app.inject({
+      method: "POST",
+      url: "/api/learning-tools/propose-subject-enrollment",
+      payload: { studentId, subjectCode, courseId: "ebsi-2027-suneungwanseong-kimjehee-english-all" },
+    });
+    assert.equal(proposalResponse.statusCode, 200);
+    const proposal = proposalResponse.json().proposal;
+    assert.equal(proposal.proposalId.startsWith("enrollment-proposal:"), true);
+    assert.equal((await database.pool.query("SELECT count(*)::text AS count FROM student_curricula WHERE student_id = $1", [studentId])).rows[0].count, "0");
+    assert.equal((await database.pool.query("SELECT count(*)::text AS count FROM student_learning_states WHERE student_id = $1", [studentId])).rows[0].count, "0");
+    assert.equal((await database.pool.query<{ status: string }>("SELECT status FROM subject_enrollment_proposals WHERE id = $1", [proposal.proposalId])).rows[0].status, "pending");
+
+    await app.close();
+    await database.close();
+    database = createDatabaseClient(databaseUrl!);
+    app = createEnrollmentApp(database.pool);
+
+    const confirmed = await app.inject({
+      method: "POST",
+      url: `/api/subject-enrollment-proposals/${proposal.proposalId}/confirm`,
+      payload: { studentId, expectedRevision: proposal.baseRevision },
+    });
+    assert.equal(confirmed.statusCode, 200);
+    const curriculumId = confirmed.json().enrollment.id;
+    const linkedItems = await database.pool.query<{ content_count: string; orientation_count: string }>(
+      `SELECT count(*)::text AS content_count,
+              count(*) FILTER (WHERE l.lesson_type = 'orientation')::text AS orientation_count
+       FROM curriculum_items ci
+       JOIN curriculum_steps cs ON cs.id = ci.curriculum_step_id
+       JOIN curriculum_versions cv ON cv.id = cs.curriculum_version_id
+       JOIN lessons l ON l.id = ci.lesson_id
+       WHERE cv.student_curriculum_id = $1 AND ci.kind = 'lecture'`,
+      [curriculumId],
+    );
+    assert.deepEqual(linkedItems.rows[0], { content_count: "40", orientation_count: "0" });
+    assert.equal((await database.pool.query<{ status: string }>("SELECT status FROM subject_enrollment_proposals WHERE id = $1", [proposal.proposalId])).rows[0].status, "confirmed");
+
+    const repeated = await app.inject({
+      method: "POST",
+      url: `/api/subject-enrollment-proposals/${proposal.proposalId}/confirm`,
+      payload: { studentId, expectedRevision: proposal.baseRevision },
+    });
+    assert.equal(repeated.statusCode, 200);
+    assert.equal(repeated.json().enrollment.id, curriculumId);
+  } finally {
+    await app.close();
+    await cleanup(database.pool);
+    await database.close();
+  }
+});
+databaseTest("과목 등록 제안은 만료와 revision 충돌을 거절하고 커리큘럼을 남기지 않는다", async (context) => {
+  const database = createDatabaseClient(databaseUrl!);
+  const studentId = `db-enrollment-conflict-${randomUUID()}`;
+  const studentCurriculumRepository = createPostgresStudentCurriculumRepository(database.pool);
+  const app = buildApp({
+    courseCatalogRepository: createPostgresCourseCatalogRepository(database.pool),
+    studentCurriculumRepository,
+    subjectEnrollmentProposalRepository: createPostgresSubjectEnrollmentProposalRepository(database.pool),
+    progressServiceResolver: (subjectCode) => createPostgresProgressService(
+      createPostgresProgressStateRepository(database.pool, subjectCode),
+      studentCurriculumRepository,
+      subjectCode,
+    ),
+  });
+  const cleanup = async () => {
+    await database.pool.query("DELETE FROM subject_enrollment_proposals WHERE student_id = $1", [studentId]);
+    await database.pool.query("DELETE FROM student_learning_states WHERE student_id = $1", [studentId]);
+    await database.pool.query("DELETE FROM student_curricula WHERE student_id = $1", [studentId]);
+    await database.pool.query("DELETE FROM students WHERE id = $1", [studentId]);
+  };
+  context.after(async () => { await app.close(); await cleanup(); await database.close(); });
+
+  const propose = async () => app.inject({
+    method: "POST",
+    url: "/api/learning-tools/propose-subject-enrollment",
+    payload: { studentId, subjectCode: "english-reading", courseId: "ebsi-2027-suneungwanseong-kimjehee-english-all" },
+  });
+  const expiredProposalResponse = await propose();
+  const expiredProposal = expiredProposalResponse.json().proposal;
+  await database.pool.query("UPDATE subject_enrollment_proposals SET expires_at = now() - interval '1 second' WHERE id = $1", [expiredProposal.proposalId]);
+  const expired = await app.inject({
+    method: "POST",
+    url: `/api/subject-enrollment-proposals/${expiredProposal.proposalId}/confirm`,
+    payload: { studentId, expectedRevision: expiredProposal.baseRevision },
+  });
+  assert.equal(expired.statusCode, 409);
+  assert.equal(expired.json().code, "PROPOSAL_EXPIRED");
+
+  const conflictProposalResponse = await propose();
+  const conflictProposal = conflictProposalResponse.json().proposal;
+  await database.pool.query(
+    `INSERT INTO student_learning_states (student_id, subject_code, revision, state_json, created_at, updated_at)
+     VALUES ($1, 'english-reading', 1, '{}'::jsonb, now(), now())`,
+    [studentId],
+  );
+  const conflict = await app.inject({
+    method: "POST",
+    url: `/api/subject-enrollment-proposals/${conflictProposal.proposalId}/confirm`,
+    payload: { studentId, expectedRevision: conflictProposal.baseRevision },
+  });
+  assert.equal(conflict.statusCode, 409);
+  assert.equal(conflict.json().code, "REVISION_CONFLICT");
+  assert.equal((await database.pool.query("SELECT count(*)::text AS count FROM student_curricula WHERE student_id = $1", [studentId])).rows[0].count, "0");
+});
+databaseTest("과목 등록 확정은 중간 삽입 실패 시 모든 커리큘럼 행을 롤백한다", async (context) => {
+  const database = createDatabaseClient(databaseUrl!);
+  const proposalRepository = createPostgresSubjectEnrollmentProposalRepository(database.pool);
+  const courseRepository = createPostgresCourseCatalogRepository(database.pool);
+  const studentId = `db-enrollment-rollback-${randomUUID()}`;
+  const proposalId = `enrollment-proposal-${randomUUID()}`;
+  const curriculumId = `enrollment-rollback-${randomUUID()}`;
+  const courseCatalog = await courseRepository.getCourseCatalog("ebsi-2027-suneungwanseong-kimjehee-english-all");
+  if (!courseCatalog) throw new Error("영어 강좌 카탈로그를 찾지 못했습니다.");
+  const lessons = courseCatalog.lessons.filter((lesson) => lesson.lessonType !== "orientation");
+  const proposal = {
+    proposalId,
+    studentId,
+    subjectCode: "english-reading",
+    baseRevision: 0,
+    interpretedRequest: { courseId: courseCatalog.course.id, weeklyMinutes: null },
+    before: { enrolled: false },
+    after: {
+      course: courseCatalog.course,
+      contentLessonCount: lessons.length,
+      estimatedTotalMinutes: Math.ceil(lessons.reduce((total, lesson) => total + lesson.duration.seconds, 0) / 60),
+      firstLesson: { lessonId: lessons[0].id, title: lessons[0].title, estimatedMinutes: Math.ceil(lessons[0].duration.seconds / 60), unitNames: lessons[0].unitNames },
+    },
+    scheduleImpact: { kind: "not-assessed" as const, message: "검증용" },
+    reasonCodes: ["catalog_course_verified"],
+    warnings: [],
+    requiresConfirmation: true as const,
+    expiresAt: new Date(Date.now() + 60_000).toISOString(),
+  };
+  const enrollment = {
+    id: curriculumId,
+    studentId,
+    subjectCode: "english-reading",
+    title: courseCatalog.course.title,
+    presentation: { paceLabel: "검증", description: "롤백 검증", recommendedFor: ["검증"], teacherComment: "롤백 검증" },
+    state: { currentStepId: "duplicate-step", currentItemId: "item-001", completedItemIds: [], reinforcementConcepts: [], maxSessionMinutes: 45 },
+    version: {
+      changeReason: "initial" as const,
+      steps: lessons.map((lesson, index) => ({
+        sourceId: "duplicate-step",
+        title: lesson.title,
+        goal: null,
+        conceptTags: ["영어"],
+        estimatedMinutes: Math.ceil(lesson.duration.seconds / 60),
+        items: [{
+          sourceId: `item-${String(index + 1).padStart(3, "0")}`,
+          kind: "lecture" as const,
+          lessonId: lesson.id,
+          title: lesson.title,
+          description: null,
+          conceptTags: ["영어"],
+          estimatedMinutes: Math.ceil(lesson.duration.seconds / 60),
+          required: true,
+          reason: "롤백 검증",
+        }],
+      })),
+    },
+  };
+  context.after(async () => {
+    await database.pool.query("DELETE FROM subject_enrollment_proposals WHERE id = $1", [proposalId]);
+    await database.pool.query("DELETE FROM students WHERE id = $1", [studentId]);
+    await database.close();
+  });
+
+  await proposalRepository.create(proposal, { studentId, subjectCode: "english-reading", courseId: courseCatalog.course.id });
+  await assert.rejects(
+    proposalRepository.confirm({ studentId, proposalId, expectedRevision: 0, enrollment }),
+    /duplicate key/,
+  );
+  assert.equal((await database.pool.query("SELECT count(*)::text AS count FROM student_curricula WHERE id = $1", [curriculumId])).rows[0].count, "0");
+  assert.equal((await database.pool.query("SELECT count(*)::text AS count FROM curriculum_versions WHERE student_curriculum_id = $1", [curriculumId])).rows[0].count, "0");
 });

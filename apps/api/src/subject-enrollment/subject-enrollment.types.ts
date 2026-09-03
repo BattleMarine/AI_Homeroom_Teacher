@@ -1,5 +1,5 @@
 import type { CourseCatalogCourse } from "../course-catalog/course-catalog.types.js";
-import type { StudentCurriculumDetail } from "../student-curriculum/student-curriculum.types.js";
+import type { StudentCurriculumDetail, SubjectEnrollmentInput } from "../student-curriculum/student-curriculum.types.js";
 
 export type SubjectEnrollmentProposalInput = {
   studentId: string;
@@ -47,3 +47,28 @@ export type SubjectEnrollmentConfirmationResult =
   | { kind: "revision-conflict"; currentRevision: number }
   | { kind: "persistence-unavailable" }
   | { kind: "subject-already-enrolled" };
+
+export type PersistedSubjectEnrollmentProposal = {
+  proposal: SubjectEnrollmentProposal;
+  input: SubjectEnrollmentProposalInput;
+  status: "pending" | "confirmed" | "expired" | "cancelled";
+  curriculumId: string | null;
+};
+
+export type SubjectEnrollmentProposalPersistenceResult =
+  | { kind: "confirmed"; curriculumId: string }
+  | { kind: "proposal-not-found" }
+  | { kind: "proposal-expired" }
+  | { kind: "revision-conflict"; currentRevision: number }
+  | { kind: "subject-already-enrolled" };
+
+export type SubjectEnrollmentProposalRepository = {
+  create(proposal: SubjectEnrollmentProposal, input: SubjectEnrollmentProposalInput): Promise<void>;
+  get(studentId: string, proposalId: string): Promise<PersistedSubjectEnrollmentProposal | undefined>;
+  confirm(input: {
+    studentId: string;
+    proposalId: string;
+    expectedRevision?: number;
+    enrollment: SubjectEnrollmentInput;
+  }): Promise<SubjectEnrollmentProposalPersistenceResult>;
+};

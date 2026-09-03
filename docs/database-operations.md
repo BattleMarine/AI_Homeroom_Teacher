@@ -47,6 +47,11 @@ pnpm --filter @ai-homeroom/api db:check
 후보 커리큘럼은 모두 `candidate` 상태로 생성됩니다. 각 후보의 pace·소개·추천 대상·AI 담임 안내는 `student_curricula.presentation_json`에 저장됩니다. 학생이 선택하면 같은 과목의 기존 `active` 후보는 다시 `candidate`가 되고, 선택한 하나만 `active`가 됩니다. 선택 상태, 해당 과목의 `student_learning_states.state_json`, 두 revision은 하나의 트랜잭션에서 함께 갱신됩니다. 표시명은 기존 API와 동일하게 `문제적용형`을 사용하며 내부 ID `practice-log`는 유지합니다.
 
 구조를 바꾸는 작업은 기존 `curriculum_versions`·`curriculum_steps`·`curriculum_items` 행을 수정하지 않습니다. 새 버전을 저장한 뒤 `student_curricula.current_version_id`, 과목별 실행 상태와 revision을 같은 트랜잭션에서 갱신합니다. `curriculum_steps.source_id`, `curriculum_items.source_id`는 API·규칙 엔진용 원본 식별자를 보존하므로 DB ID 문자열을 파싱하지 않습니다. `lecture` 항목에는 존재하는 `lessons.id`가 필수이며, 기준 강좌에 재생 대상이 비어 있을 때 seed는 결정적인 `mock-video:<lessonId>` 재생 대상을 DB에 보완합니다.
+## 과목 등록 제안 영속화
+
+`subject_enrollment_proposals`는 새 과목 등록 제안 전용 테이블입니다. 기존 `session_adjustment_proposals`는 이미 진행 중인 과목의 오늘 수업 조율안을 저장하므로, 수명·확정 결과·강좌 연결이 다른 등록 제안과 분리했습니다.
+
+등록 제안은 서버가 발급한 `proposalId`를 기본 키 겸 중복 확정 식별자로 사용하고, 요청·계산 결과·기준 revision·만료 시각을 함께 저장합니다. 확정 시 제안 행과 해당 학생·과목의 advisory lock을 같은 트랜잭션에서 확보한 뒤, 콘텐츠 강의(orientation 제외)를 학생별 커리큘럼·첫 버전·단계·항목과 과목 실행 상태로 만듭니다. 성공하면 제안을 `confirmed`와 생성 커리큘럼 ID로 갱신하며, 같은 제안의 재확정은 기존 결과를 반환합니다. revision 충돌은 `expired`, 이미 등록된 과목은 `cancelled`로 바뀌며 어느 경우도 새 커리큘럼 행을 남기지 않습니다.
 
 ## 커리큘럼 읽기 모델
 
@@ -91,6 +96,7 @@ DB 통합 테스트는 다음을 검증합니다.
 - 커리큘럼 새 버전 저장 시 이전 버전 보존, 잘못된 강의 연결의 전체 롤백
 - 선택 전 `409 CURRICULUM_SELECTION_REQUIRED`와 원자적 선택·실행 상태 갱신
 - presentation 메타데이터·sourceId를 포함한 repeatable-read 읽기 모델
+- 과목 등록 제안의 재시작 후 확정, 중복 확정, 만료·revision 충돌 거절과 orientation 제외
 
 ## 개발 데이터 초기화
 

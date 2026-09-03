@@ -24,6 +24,7 @@ import { createSubjectEnrollmentService } from "./subject-enrollment/subject-enr
 import type {
   SubjectEnrollmentConfirmationInput,
   SubjectEnrollmentProposalInput,
+  SubjectEnrollmentProposalRepository,
 } from "./subject-enrollment/subject-enrollment.types.js";
 import { createTeacherLlmService } from "./teacher-llm/teacher-llm.service.js";
 import type { TeacherLlmService } from "./teacher-llm/teacher-llm.types.js";
@@ -249,6 +250,7 @@ type AppDependencies = {
   curriculumToolService?: CurriculumToolService;
   progressToolService?: ProgressToolService;
   studentCurriculumRepository?: StudentCurriculumRepository;
+  subjectEnrollmentProposalRepository?: SubjectEnrollmentProposalRepository;
   progressServiceResolver?: ProgressServiceResolver;
 };
 
@@ -260,6 +262,7 @@ export function buildApp({
   curriculumToolService,
   progressToolService,
   studentCurriculumRepository,
+  subjectEnrollmentProposalRepository,
   progressServiceResolver,
 }: AppDependencies = {}) {
   const app = Fastify({ logger: true, disableRequestLogging: true });
@@ -273,7 +276,11 @@ export function buildApp({
   });
   const recommendationService =
     curriculumRecommendationService ?? createCurriculumRecommendationService(courseCatalogRepository);
-  const subjectEnrollmentService = createSubjectEnrollmentService(courseCatalogRepository, studentCurriculumRepository);
+  const subjectEnrollmentService = createSubjectEnrollmentService(
+    courseCatalogRepository,
+    studentCurriculumRepository,
+    subjectEnrollmentProposalRepository,
+  );
   const getProgressService = (subjectCode: string) => progressServiceResolver?.(subjectCode) ?? progressService;
   const toolService = curriculumToolService ?? createCurriculumToolService(recommendationService, getProgressService(legacySubjectCode));
   const getProgressTools = (subjectCode: string) => progressToolService ?? createProgressToolService(getProgressService(subjectCode));
