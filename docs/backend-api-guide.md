@@ -1,5 +1,32 @@
 # 백엔드 API 호출 가이드
 
+## 다과목 `subjectCode` 전환 계약
+
+학습 상태 API는 학생과 과목을 함께 식별합니다. 새 연동은 모든 학습 상태 요청에 `subjectCode`를 반드시 넣고, 응답의 같은 필드를 현재 화면 상태의 과목 식별자로 사용합니다.
+
+```text
+studentId=000 + subjectCode=math-logarithm
+studentId=000 + subjectCode=english-reading
+```
+
+같은 학생이어도 두 요청의 현재 수업, 완료 항목, 피드백, 조율 제안과 `revision`은 서로 독립적입니다. PostgreSQL 모드에서는 서버가 과목 코드별 저장소와 활성 커리큘럼 읽기 모델을 선택합니다.
+
+대상 API는 다음과 같습니다.
+
+- 조회: `GET /api/curriculums`, `/api/learning-snapshot`, `/api/curriculum-read-model`, `/api/student-context`, `/api/today-session`, `/api/today-session/progress`, `/api/curriculum-map`, `/api/lesson-items/:lessonItemId`와 playback 경로
+- 상태 변경: `POST /api/student-context/curriculum`, `/api/lesson-feedback`, `/api/conversations/:conversationId/messages`, `/api/session-adjustments/:adjustmentId/confirm`, `/api/progress-tools/execute`
+
+예를 들어 영어 현재 수업은 다음처럼 조회합니다.
+
+```bash
+curl -sS --get "$API_BASE_URL/api/today-session" \
+  --data-urlencode "studentId=$STUDENT_ID" \
+  --data-urlencode "subjectCode=english-reading"
+```
+
+과도기 호환을 위해 `subjectCode`를 생략하면 기존 수학 데모 과목인 `math-logarithm`을 사용합니다. 새 프론트·LLM 도구 연동에서는 생략하지 마세요.
+
+기존 `curriculum-tools`와 `curriculum-plans/current`은 아직 수학 로그함수 기준 계획 도구입니다. 다른 과목 코드를 보내면 상태를 수학으로 대체 적용하지 않고 `422`와 `CURRICULUM_TOOL_SUBJECT_NOT_SUPPORTED`를 반환합니다. 국어·영어의 첫 커리큘럼은 과목 등록 제안 뒤 명시적 확정 API에서 생성합니다.
 ## PostgreSQL 읽기 모델 전환 안내
 
 `PERSISTENCE_MODE=postgres`에서는 학습 화면 API가 PostgreSQL의 활성 커리큘럼 현재 버전과 실행 상태를 규칙 엔진 입력으로 사용합니다. 메모리 mock 커리큘럼으로 조용히 대체하지 않습니다.
@@ -118,6 +145,81 @@ curl -sS "$API_BASE_URL/api/health"
 
 ---
 
+## 학습 카탈로그 검색
+
+```text
+GET /api/learning-catalog/search?query={검색어}&limit={최대 결과 수}
+```
+
+과목명·강좌명·강사명·제공처로 등록 가능한 강좌 후보를 **조회만** 합니다. 학생별 커리큘럼, 학습 상태, revision은 변경하지 않습니다. 이는 LLM의 `search_learning_catalog` 읽기 도구가 사용할 수 있는 초기 API 경계입니다.
+
+```bash
+curl -sS --get "$API_BASE_URL/api/learning-catalog/search" \
+  --data-urlencode "query=영어" \
+  --data-urlencode "limit=10"
+```
+
+`query`는 필수이며 1~100자, `limit`은 선택값으로 1~20입니다. 검색 결과가 없으면 오류 대신 빈 `matches` 배열을 반환합니다. 현재 카탈로그에 수준·목표 정보가 없으므로 이 API는 그 값을 추론하거나 만들어 내지 않습니다.
+
+응답의 각 `matches[]`는 원본 `course`와 일치 근거인 `matchFields`를 포함합니다. 다음 과목 등록 제안 단계에서만 학생·과목·강좌 선택을 검증하고 상태를 변경합니다.
+
+---
+## 과목 등록 제안
+
+```text
+POST /api/learning-tools/propose-subject-enrollment
+```
+
+이 API는 과목별 첫 커리큘럼을 만들기 전의 **읽기 전용 제안**입니다. 성공해도 학생별 커리큘럼, 실행 상태, revision은 저장하거나 바꾸지 않습니다.
+
+```json
+{
+  "studentId": "000",
+  "subjectCode": "english-reading",
+  "courseId": "ebsi-2027-suneungwanseong-kimjehee-english-all",
+  "weeklyMinutes": 120
+}
+```
+
+현재 등록 제안이 검증하는 과목 코드는 `english-reading`, `korean-language-media`입니다. 응답은 `proposalId`, 첫 강의, 강의 수, 예상 총 학습 시간, 경고, `requiresConfirmation: true`, `expiresAt`을 포함합니다. `proposalId`는 API 프로세스 메모리에 최대 30분 동안만 보관되는 단기 확인용 식별자입니다. API를 재시작하면 만료되므로, 장기 보관·재시도 보장은 후속 DB 제안 저장소 단계에서 추가합니다.
+
+| 상황 | 상태 | 코드 |
+| --- | --- | --- |
+| 강좌 없음 | 404 | `COURSE_NOT_FOUND` |
+| 과목 코드와 강좌 불일치 또는 아직 지원하지 않는 과목 | 422 | `COURSE_SUBJECT_MISMATCH` |
+| 같은 과목이 이미 candidate 또는 active | 409 | `SUBJECT_ALREADY_ENROLLED` |
+
+아래 확정 API가 학생 확인, 중복 등록 재검증, 커리큘럼 버전·실행 상태 생성을 하나의 PostgreSQL 트랜잭션으로 처리합니다.
+
+---
+## 과목 등록 확정
+
+```text
+POST /api/subject-enrollment-proposals/:proposalId/confirm
+```
+
+제안 API가 돌려준 `proposalId`를 같은 `studentId`와 함께 명시적으로 확정합니다. 이 요청만 PostgreSQL의 학생별 활성 커리큘럼·첫 버전·실행 상태를 함께 생성합니다. 메모리 mock 모드에서는 의도적으로 확정할 수 없습니다.
+
+```json
+{
+  "studentId": "000",
+  "expectedRevision": 0
+}
+```
+
+성공하면 `subjectCode`, 생성된 `enrollment`, 그리고 새 과목의 `snapshot`을 반환합니다. 초기 버전은 오리엔테이션을 제외한 선택 강좌의 원본 순서를 보존하며, 첫 강의를 현재 항목으로 설정합니다. 같은 제안을 다시 확정하면 이미 생성된 결과를 반환하므로 중복 버전이 생기지 않습니다.
+
+| 상황 | 상태 | 코드 |
+| --- | --- | --- |
+| 제안을 찾을 수 없거나 다른 학생 제안 | 404 | `PROPOSAL_NOT_FOUND` |
+| 제안 유효 시간 만료 | 409 | `PROPOSAL_EXPIRED` |
+| 제안 기준 revision 불일치 | 409 | `REVISION_CONFLICT` |
+| PostgreSQL 모드가 아님 | 409 | `ENROLLMENT_PERSISTENCE_UNAVAILABLE` |
+| 해당 과목이 이미 등록됨 | 409 | `SUBJECT_ALREADY_ENROLLED` |
+
+프론트 mock LLM 대화는 이 API를 아직 호출하지 않습니다. LLM 연동 문서가 준비된 뒤 `propose_subject_enrollment` 결과를 사용자에게 보여 주고, 사용자의 명시적 동의에만 이 확정 API를 호출해야 합니다. `proposalId`는 경로에 넣고, 제안 응답의 `baseRevision`은 본문의 `expectedRevision`으로 전달합니다.
+
+---
 ## 2. 강좌 카탈로그 목록 조회
 
 ```text

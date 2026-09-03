@@ -74,6 +74,19 @@ export type VersionSaveResult =
   | { kind: "saved"; curriculum: StudentCurriculumDetail }
   | { kind: "revision-conflict"; currentRevision: number };
 
+export type SubjectEnrollmentInput = {
+  id: string;
+  studentId: string;
+  subjectCode: string;
+  title: string;
+  presentation: CurriculumPresentation;
+  state: StudentCurriculumState;
+  version: CurriculumVersionInput;
+};
+
+export type SubjectEnrollmentResult =
+  | { kind: "created"; curriculum: StudentCurriculumDetail }
+  | { kind: "already-enrolled" };
 export type StudentCurriculumRepository = {
   listForStudent(studentId: string): Promise<StudentCurriculumDetail[]>;
   getById(studentId: string, curriculumId: string): Promise<StudentCurriculumDetail | undefined>;
@@ -95,4 +108,5 @@ export type StudentCurriculumRepository = {
     state: StudentCurriculumState;
     version: CurriculumVersionInput;
   }): Promise<VersionSaveResult | undefined>;
+  enrollSubject?(input: SubjectEnrollmentInput): Promise<SubjectEnrollmentResult>;
 };

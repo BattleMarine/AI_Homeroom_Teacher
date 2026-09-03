@@ -83,6 +83,159 @@ test("PostgreSQL 진도 서비스는 읽기 모델의 sourceId를 규칙 엔진 
   assert.equal(feedbackResponse.json().completedLesson.id, "db-item:1");
 });
 
+test("학생의 과목별 학습 snapshot과 revision은 서로 독립적으로 유지된다", async (context) => {
+  const createCurriculum = (id: string, subjectCode: string, stepId: string, itemId: string): StudentCurriculumDetail => ({
+    id,
+    studentId: "multi-subject-test",
+    subjectCode,
+    title: `${subjectCode} 커리큘럼`,
+    status: "active",
+    presentation: { paceLabel: "검증형", description: "다과목 API 검증용 커리큘럼입니다.", recommendedFor: ["검증"], teacherComment: "과목별 상태를 분리합니다." },
+    currentVersionId: `${id}:v1`,
+    revision: 0,
+    state: { currentStepId: stepId, completedStepIds: [], weakConcepts: [] },
+    currentVersion: {
+      id: `${id}:v1`, versionNumber: 1, changeReason: "initial", changeSummary: null,
+      steps: [{
+        id: `${id}:v1:${stepId}`, sourceId: stepId, sequence: 0, title: `${subjectCode} 첫 단계`, goal: "첫 학습 항목을 진행합니다.", conceptTags: [`${subjectCode} 개념`], estimatedMinutes: 20,
+        items: [{
+          id: `${id}:v1:${stepId}:${itemId}`, sourceId: itemId, sequence: 0, kind: "lecture", lessonId: `${subjectCode}-lesson`, title: `${subjectCode} 강의`, description: "과목별 검증 강의", conceptTags: [`${subjectCode} 개념`], estimatedMinutes: 20, required: true, reason: "과목별 첫 학습",
+        }],
+      }],
+    },
+  });
+  const math = createCurriculum("multi-math", "math-logarithm", "math:step:1", "math:item:1");
+  const english = createCurriculum("multi-english", "english-reading", "english:step:1", "english:item:1");
+  const curriculums = [math, english];
+  const curriculumRepository: StudentCurriculumRepository = {
+    async listForStudent() { return curriculums; },
+    async getById(_studentId, curriculumId) { return curriculums.find((curriculum) => curriculum.id === curriculumId); },
+    async seedCandidate() {},
+    async selectCandidate(_studentId, curriculumId) { return curriculums.find((curriculum) => curriculum.id === curriculumId); },
+    async getActiveReadModel(_studentId, subjectCode) {
+      const curriculum = curriculums.find((candidate) => candidate.subjectCode === subjectCode);
+      return curriculum ? { kind: "active", curriculum, executionState: null } : { kind: "selection-required" };
+    },
+    async saveNewVersion() { return undefined; },
+  };
+  const stateRepositories = new Map<string, ReturnType<typeof createMemoryProgressStateRepository>>();
+  const services = new Map<string, ReturnType<typeof createPostgresProgressService>>();
+  const getProgressService = (subjectCode: string) => {
+    const existing = services.get(subjectCode);
+    if (existing) return existing;
+    const service = createPostgresProgressService(
+      stateRepositories.get(subjectCode) ?? (() => {
+        const repository = createMemoryProgressStateRepository();
+        stateRepositories.set(subjectCode, repository);
+        return repository;
+      })(),
+      curriculumRepository,
+      subjectCode,
+    );
+    services.set(subjectCode, service);
+    return service;
+  };
+  const app = buildApp({ studentCurriculumRepository: curriculumRepository, progressServiceResolver: getProgressService });
+  context.after(() => app.close());
+
+  const mathSnapshot = await app.inject({ method: "GET", url: "/api/learning-snapshot?studentId=multi-subject-test&subjectCode=math-logarithm" });
+  const englishSnapshot = await app.inject({ method: "GET", url: "/api/learning-snapshot?studentId=multi-subject-test&subjectCode=english-reading" });
+  assert.equal(mathSnapshot.statusCode, 200);
+  assert.equal(englishSnapshot.statusCode, 200);
+  assert.equal(mathSnapshot.json().subjectCode, "math-logarithm");
+  assert.equal(englishSnapshot.json().subjectCode, "english-reading");
+  assert.equal(mathSnapshot.json().snapshot.todaySession.items[0].id, "math:item:1");
+  assert.equal(englishSnapshot.json().snapshot.todaySession.items[0].id, "english:item:1");
+
+  const englishFeedback = await app.inject({
+    method: "POST",
+    url: "/api/lesson-feedback",
+    payload: { studentId: "multi-subject-test", subjectCode: "english-reading", lessonId: "english:item:1", understandingLevel: 1, focusLevel: 2 },
+  });
+  assert.equal(englishFeedback.statusCode, 200);
+  assert.equal(englishFeedback.json().subjectCode, "english-reading");
+  assert.equal(englishFeedback.json().snapshot.revision, 1);
+  assert.equal(englishFeedback.json().snapshot.studentContext.completedLessonItemIds.includes("english:item:1"), true);
+
+  const unchangedMath = await app.inject({ method: "GET", url: "/api/learning-snapshot?studentId=multi-subject-test&subjectCode=math-logarithm" });
+  assert.equal(unchangedMath.json().snapshot.revision, 0);
+  assert.equal(unchangedMath.json().snapshot.studentContext.completedLessonItemIds.length, 0);
+});
+test("수학 전용 커리큘럼 계획 도구는 다른 과목 상태에 적용하지 않는다", async (context) => {
+  const app = buildApp();
+  context.after(() => app.close());
+
+  const response = await app.inject({
+    method: "POST",
+    url: "/api/curriculum-tools/execute",
+    payload: {
+      tool: "apply_curriculum_plan",
+      input: { studentId: "multi-subject-tool-test", subjectCode: "english-reading" },
+    },
+  });
+
+  assert.equal(response.statusCode, 422);
+  assert.equal(response.json().code, "CURRICULUM_TOOL_SUBJECT_NOT_SUPPORTED");
+  assert.equal(response.json().subjectCode, "english-reading");
+});
+test("학습 카탈로그 검색 API는 등록 전에 과목 후보만 반환한다", async (context) => {
+  const app = buildApp();
+  context.after(() => app.close());
+
+  const response = await app.inject({ method: "GET", url: "/api/learning-catalog/search?query=%EC%98%81%EC%96%B4" });
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.json().query, "영어");
+  assert.equal(response.json().matches.length, 1);
+  assert.equal(response.json().matches[0].course.id, englishCourseId);
+  assert.equal(response.json().matches[0].matchFields.includes("primarySubject"), true);
+});
+test("과목 등록 제안 API는 영어 카탈로그를 검증하지만 학습 상태는 바꾸지 않는다", async (context) => {
+  const app = buildApp();
+  context.after(() => app.close());
+
+  const response = await app.inject({
+    method: "POST",
+    url: "/api/learning-tools/propose-subject-enrollment",
+    payload: {
+      studentId: "enrollment-proposal-test",
+      subjectCode: "english-reading",
+      courseId: englishCourseId,
+      weeklyMinutes: 120,
+    },
+  });
+
+  assert.equal(response.statusCode, 200);
+  const proposal = response.json().proposal;
+  assert.equal(proposal.studentId, "enrollment-proposal-test");
+  assert.equal(proposal.subjectCode, "english-reading");
+  assert.equal(proposal.before.enrolled, false);
+  assert.equal(proposal.after.course.id, englishCourseId);
+  assert.equal(proposal.after.contentLessonCount, 40);
+  assert.equal(proposal.after.firstLesson.lessonId, "ebsi-kimjehee-2027-english-001");
+  assert.equal(proposal.requiresConfirmation, true);
+  assert.equal(Number.isNaN(Date.parse(proposal.expiresAt)), false);
+
+  const mismatch = await app.inject({
+    method: "POST",
+    url: "/api/learning-tools/propose-subject-enrollment",
+    payload: {
+      studentId: "enrollment-proposal-test",
+      subjectCode: "korean-language-media",
+      courseId: englishCourseId,
+    },
+  });
+  assert.equal(mismatch.statusCode, 422);
+  assert.equal(mismatch.json().code, "COURSE_SUBJECT_MISMATCH");
+
+  const confirmation = await app.inject({
+    method: "POST",
+    url: `/api/subject-enrollment-proposals/${proposal.proposalId}/confirm`,
+    payload: { studentId: "enrollment-proposal-test", expectedRevision: proposal.baseRevision },
+  });
+  assert.equal(confirmation.statusCode, 409);
+  assert.equal(confirmation.json().code, "ENROLLMENT_PERSISTENCE_UNAVAILABLE");
+});
 test("파일 강좌 카탈로그 API가 미적분 강좌와 강의 목록을 반환한다", async (context) => {
   const app = buildApp();
   context.after(() => app.close());

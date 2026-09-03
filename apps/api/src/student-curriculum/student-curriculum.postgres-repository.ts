@@ -10,6 +10,8 @@ import type {
   StudentCurriculum,
   StudentCurriculumDetail,
   StudentCurriculumRepository,
+  SubjectEnrollmentInput,
+  SubjectEnrollmentResult,
   VersionSaveResult,
 } from "./student-curriculum.types.js";
 
@@ -124,6 +126,36 @@ export function createPostgresStudentCurriculumRepository(pool: Pool): StudentCu
         return { kind: "saved", curriculum: await getDetail(client, await getCurriculum(client, input.studentId, input.curriculumId)) };
       });
       return result;
+    },
+    async enrollSubject(input: SubjectEnrollmentInput): Promise<SubjectEnrollmentResult> {
+      return withTransaction(pool, async (client) => {
+        await client.query(
+          `INSERT INTO students (id, display_name, status, created_at, updated_at)
+           VALUES ($1, '데모 학생', 'demo', now(), now()) ON CONFLICT (id) DO NOTHING`,
+          [input.studentId],
+        );
+        await client.query("SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))", [input.studentId, input.subjectCode]);
+        const existing = await client.query<{ id: string }>(
+          `SELECT id FROM student_curricula
+           WHERE student_id = $1 AND subject_code = $2 AND status <> 'archived'
+           FOR UPDATE`,
+          [input.studentId, input.subjectCode],
+        );
+        if (existing.rows[0]) return { kind: "already-enrolled" };
+
+        await client.query(
+          `INSERT INTO student_curricula (
+            id, student_id, subject_code, title, status, presentation_json, revision, state_json, created_at, updated_at
+          ) VALUES ($1, $2, $3, $4, 'active', $5::jsonb, 0, $6::jsonb, now(), now())`,
+          [input.id, input.studentId, input.subjectCode, input.title, JSON.stringify(input.presentation), JSON.stringify(input.state)],
+        );
+        const curriculum = await getLockedCurriculum(client, input.studentId, input.id);
+        if (!curriculum) throw new Error("등록할 학생별 커리큘럼을 만들지 못했습니다.");
+        await insertVersion(client, curriculum, input.version, input.state, 1);
+        await persistExecutionState(client, input.studentId, input.subjectCode, input.state, 1);
+        const detail = await getDetail(client, await getCurriculum(client, input.studentId, input.id));
+        return { kind: "created", curriculum: detail };
+      });
     },
   };
 }

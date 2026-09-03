@@ -566,3 +566,108 @@ databaseTest("PostgreSQL API 핵심 학습 흐름은 학생별로 격리되고 �
     await activeDatabase.close();
   }
 });
+
+databaseTest("과목 등록 저장소는 첫 버전과 실행 상태를 원자적으로 만든다", async (context) => {
+  const database = createDatabaseClient(databaseUrl!);
+  const repository = createPostgresStudentCurriculumRepository(database.pool);
+  const studentId = `db-enrollment-${randomUUID()}`;
+  const curriculumId = `db-enrollment-curriculum-${randomUUID()}`;
+  const subjectCode = "english-reading";
+  const lesson = await database.pool.query<{ id: string }>(
+    "SELECT id FROM lessons WHERE course_id = 'ebsi-2027-suneungwanseong-kimjehee-english-all' AND lesson_type <> 'orientation' ORDER BY sequence ASC LIMIT 1",
+  );
+  assert.ok(lesson.rows[0]);
+
+  const cleanup = async () => {
+    await database.pool.query("DELETE FROM student_learning_states WHERE student_id = $1 AND subject_code = $2", [studentId, subjectCode]);
+    await database.pool.query(
+      "DELETE FROM curriculum_items WHERE curriculum_step_id IN (SELECT id FROM curriculum_steps WHERE curriculum_version_id IN (SELECT id FROM curriculum_versions WHERE student_curriculum_id = $1))",
+      [curriculumId],
+    );
+    await database.pool.query("DELETE FROM curriculum_steps WHERE curriculum_version_id IN (SELECT id FROM curriculum_versions WHERE student_curriculum_id = $1)", [curriculumId]);
+    await database.pool.query("UPDATE student_curricula SET current_version_id = NULL WHERE id = $1", [curriculumId]);
+    await database.pool.query("DELETE FROM curriculum_versions WHERE student_curriculum_id = $1", [curriculumId]);
+    await database.pool.query("DELETE FROM student_curricula WHERE id = $1", [curriculumId]);
+    await database.pool.query("DELETE FROM students WHERE id = $1", [studentId]);
+  };
+  context.after(async () => { await cleanup(); await database.close(); });
+
+  const input = {
+    id: curriculumId,
+    studentId,
+    subjectCode,
+    title: "영어 등록 검증 커리큘럼",
+    presentation: { paceLabel: "기본 등록안", description: "등록 검증", recommendedFor: ["검증"], teacherComment: "첫 수업을 시작합니다." },
+    state: { currentStepId: "step-001", currentItemId: "item-001", completedItemIds: [], reinforcementConcepts: [], maxSessionMinutes: 45 },
+    version: {
+      changeReason: "initial" as const,
+      steps: [{
+        sourceId: "step-001", title: "영어 첫 강의", goal: null, conceptTags: ["영어"], estimatedMinutes: 10,
+        items: [{ sourceId: "item-001", kind: "lecture" as const, lessonId: lesson.rows[0].id, title: "영어 첫 강의", description: null, conceptTags: ["영어"], estimatedMinutes: 10, required: true, reason: "초기 등록" }],
+      }],
+    },
+  };
+  const created = await repository.enrollSubject!(input);
+  assert.equal(created.kind, "created");
+  if (created.kind !== "created") throw new Error("과목 등록을 만들지 못했습니다.");
+  assert.equal(created.curriculum.status, "active");
+  assert.equal(created.curriculum.currentVersion?.versionNumber, 1);
+  const readModel = await repository.getActiveReadModel(studentId, subjectCode);
+  assert.equal(readModel.kind, "active");
+  if (readModel.kind !== "active") throw new Error("활성 읽기 모델을 찾지 못했습니다.");
+  assert.equal(readModel.executionState?.revision, 1);
+  assert.equal((readModel.executionState?.state.context as { currentItemId?: string } | undefined)?.currentItemId, "item-001");
+  assert.deepEqual(await repository.enrollSubject!(input), { kind: "already-enrolled" });
+});
+
+databaseTest("과목 등록 확정 API는 제안 확인 뒤 새 과목 snapshot을 반환한다", async (context) => {
+  const database = createDatabaseClient(databaseUrl!);
+  const studentId = `db-enrollment-api-${randomUUID()}`;
+  const studentCurriculumRepository = createPostgresStudentCurriculumRepository(database.pool);
+  const app = buildApp({
+    courseCatalogRepository: createPostgresCourseCatalogRepository(database.pool),
+    studentCurriculumRepository,
+    progressServiceResolver: (subjectCode) => createPostgresProgressService(
+      createPostgresProgressStateRepository(database.pool, subjectCode),
+      studentCurriculumRepository,
+      subjectCode,
+    ),
+  });
+  const cleanup = async () => {
+    await database.pool.query("DELETE FROM student_learning_states WHERE student_id = $1", [studentId]);
+    await database.pool.query("DELETE FROM curriculum_items WHERE curriculum_step_id IN (SELECT cs.id FROM curriculum_steps cs JOIN curriculum_versions cv ON cv.id = cs.curriculum_version_id JOIN student_curricula sc ON sc.id = cv.student_curriculum_id WHERE sc.student_id = $1)", [studentId]);
+    await database.pool.query("DELETE FROM curriculum_steps WHERE curriculum_version_id IN (SELECT cv.id FROM curriculum_versions cv JOIN student_curricula sc ON sc.id = cv.student_curriculum_id WHERE sc.student_id = $1)", [studentId]);
+    await database.pool.query("UPDATE student_curricula SET current_version_id = NULL WHERE student_id = $1", [studentId]);
+    await database.pool.query("DELETE FROM curriculum_versions WHERE student_curriculum_id IN (SELECT id FROM student_curricula WHERE student_id = $1)", [studentId]);
+    await database.pool.query("DELETE FROM student_curricula WHERE student_id = $1", [studentId]);
+    await database.pool.query("DELETE FROM students WHERE id = $1", [studentId]);
+  };
+  context.after(async () => { await app.close(); await cleanup(); await database.close(); });
+
+  const proposalResponse = await app.inject({
+    method: "POST",
+    url: "/api/learning-tools/propose-subject-enrollment",
+    payload: { studentId, subjectCode: "english-reading", courseId: "ebsi-2027-suneungwanseong-kimjehee-english-all" },
+  });
+  assert.equal(proposalResponse.statusCode, 200);
+  const proposal = proposalResponse.json().proposal;
+  const confirmationResponse = await app.inject({
+    method: "POST",
+    url: `/api/subject-enrollment-proposals/${proposal.proposalId}/confirm`,
+    payload: { studentId, expectedRevision: proposal.baseRevision },
+  });
+  assert.equal(confirmationResponse.statusCode, 200);
+  assert.equal(confirmationResponse.json().dataSource, "postgres");
+  assert.equal(confirmationResponse.json().subjectCode, "english-reading");
+  assert.equal(confirmationResponse.json().enrollment.currentVersion.steps.length, 40);
+  assert.equal(confirmationResponse.json().snapshot.studentContext.selectedCurriculumId, confirmationResponse.json().enrollment.id);
+  assert.equal(confirmationResponse.json().snapshot.revision, 1);
+
+  const repeated = await app.inject({
+    method: "POST",
+    url: `/api/subject-enrollment-proposals/${proposal.proposalId}/confirm`,
+    payload: { studentId, expectedRevision: proposal.baseRevision },
+  });
+  assert.equal(repeated.statusCode, 200);
+  assert.equal(repeated.json().enrollment.id, confirmationResponse.json().enrollment.id);
+});

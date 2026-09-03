@@ -309,7 +309,11 @@ export function createPostgresProgressService(
     },
     async getProgressSnapshot(studentId) {
       const readModel = await loadActive(studentId);
-      return createProgressSnapshot(createService(createState(studentId, readModel)), studentId);
+      const state = await repository.getOrCreate(studentId, createState(studentId, readModel));
+      return createProgressSnapshot(
+        createService(attachCurrentCurriculum(studentId, state, readModel.curriculum)),
+        studentId,
+      );
     },
   };
 }

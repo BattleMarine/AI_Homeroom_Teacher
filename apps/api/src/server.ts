@@ -40,14 +40,19 @@ async function assertRequiredMigrations(pool: Pool) {
   }
 }
 
+const studentCurriculumRepository = database
+  ? createPostgresStudentCurriculumRepository(database.pool)
+  : undefined;
+
 const app = database
   ? buildApp({
       courseCatalogRepository: createPostgresCourseCatalogRepository(database.pool),
-      progressService: createPostgresProgressService(
-        createPostgresProgressStateRepository(database.pool),
-        createPostgresStudentCurriculumRepository(database.pool),
+      progressServiceResolver: (subjectCode) => createPostgresProgressService(
+        createPostgresProgressStateRepository(database.pool, subjectCode),
+        studentCurriculumRepository!,
+        subjectCode,
       ),
-      studentCurriculumRepository: createPostgresStudentCurriculumRepository(database.pool),
+      studentCurriculumRepository,
     })
   : buildApp();
 
