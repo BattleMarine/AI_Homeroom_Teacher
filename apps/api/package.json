@@ -14,7 +14,8 @@
     "db:migrate": "tsx src/db/migrate.ts",
     "db:seed": "tsx src/db/seed.ts",
     "db:check": "tsx src/db/check.ts",
-    "test:db": "tsx --test test/db.integration.test.ts"
+    "test:db": "tsx --test test/db.integration.test.ts",
+    "test:db:learning-plan": "node --env-file=../../.env.learning-plan-test.local --import tsx --test test/learning-plan.repository.test.ts"
   },
   "dependencies": {
     "drizzle-orm": "^0.45.2",
