@@ -34,6 +34,26 @@ export type LearningPlanAssignment = Pick<LearningPlanCatalogItem,
   order: number;
 };
 
+/** 원본 강의를 복제하지 않는 예정 이어보기 구간. 구간 길이는 끝-시작이다. */
+export type LearningPlanSegmentAssignment = LearningPlanAssignment & {
+  itemKey: string;
+  segmentKey: string;
+  startOffsetSeconds: number;
+  endOffsetSeconds: number;
+};
+export type LearningPlanExecutionProgress = { itemKey: string; positionSeconds: number };
+export type LearningPlanSchedulableItem = LearningPlanCatalogItem & {
+  itemKey: string;
+  carryoverSinceDate?: string | null;
+};
+export type LearningPlanSegmentValidationInput = {
+  items: readonly LearningPlanSchedulableItem[];
+  days: readonly LearningPlanDayCapacity[];
+  assignments: readonly LearningPlanSegmentAssignment[];
+  progress: readonly LearningPlanExecutionProgress[];
+  dailyUsage?: readonly { studyDate: string; spentSeconds: number }[];
+};
+
 export type LearningPlanIssueCode =
   | "INVALID_CATALOG_SELECTION" | "INVALID_LESSON_TYPE_SELECTION"
   | "DUPLICATE_COURSE_ID" | "DUPLICATE_LESSON_ID" | "COURSE_LESSON_MISMATCH"

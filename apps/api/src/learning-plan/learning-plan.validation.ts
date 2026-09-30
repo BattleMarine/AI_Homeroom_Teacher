@@ -6,6 +6,8 @@ import {
   type LearningPlanValidationResult,
 } from "./learning-plan.types.js";
 
+export { validateLearningPlanSegments } from "./learning-plan.segment-validation.js";
+
 /** 배치 엔진을 호출하지 않고 입력 카탈로그의 집합·초·순서와 예정 일정을 대조한다. */
 export function validateLearningPlan(input: LearningPlanValidationInput): LearningPlanValidationResult {
   const issues: LearningPlanIssue[] = [];
