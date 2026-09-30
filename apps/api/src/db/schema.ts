@@ -1,4 +1,4 @@
-import { boolean, check, index, integer, jsonb, pgTable, text, timestamp, uniqueIndex, uuid, varchar } from "drizzle-orm/pg-core";
+import { boolean, check, date, foreignKey, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uniqueIndex, uuid, varchar, type PgTableExtraConfigValue } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
 export const students = pgTable("students", {
@@ -159,4 +159,97 @@ export const sessionAdjustmentProposals = pgTable("session_adjustment_proposals"
 }, (table) => [
   index("session_adjustment_proposals_student_subject_status_idx").on(table.studentId, table.subjectCode, table.status),
   index("session_adjustment_proposals_created_at_idx").on(table.createdAt),
+]);
+
+// 학생 전체 계획은 기존 과목별 커리큘럼/피드백과 독립적으로 보존한다.
+export const learningPlans = pgTable("learning_plans", {
+  id: varchar("id", { length: 200 }).primaryKey(),
+  studentId: varchar("student_id", { length: 100 }).notNull().references(() => students.id),
+  currentVersionId: varchar("current_version_id", { length: 200 }),
+  planRevision: integer("plan_revision").notNull().default(0),
+  completionRevision: integer("completion_revision").notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull(),
+}, (table): PgTableExtraConfigValue[] => [
+  uniqueIndex("learning_plans_student_key").on(table.studentId),
+  uniqueIndex("learning_plans_student_id_key").on(table.studentId, table.id),
+  check("learning_plans_plan_revision_check", sql`${table.planRevision} >= 0`),
+  check("learning_plans_completion_revision_check", sql`${table.completionRevision} >= 0`),
+  foreignKey({ name: "learning_plans_current_version_fk", columns: [table.id, table.currentVersionId],
+    foreignColumns: [learningPlanVersions.planId, learningPlanVersions.id] }),
+]);
+
+export const learningPlanVersions = pgTable("learning_plan_versions", {
+  id: varchar("id", { length: 200 }).primaryKey(),
+  planId: varchar("plan_id", { length: 200 }).notNull().references(() => learningPlans.id),
+  versionNumber: integer("version_number").notNull(),
+  kind: varchar("kind", { length: 20 }).notNull(),
+  scopeJson: jsonb("scope_json").notNull(), reason: text("reason").notNull(), diffJson: jsonb("diff_json").notNull(),
+  candidateJson: jsonb("candidate_json").notNull(), catalogHash: varchar("catalog_hash", { length: 64 }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+}, (table): PgTableExtraConfigValue[] => [
+  uniqueIndex("learning_plan_versions_number_key").on(table.planId, table.versionNumber),
+  uniqueIndex("learning_plan_versions_plan_id_key").on(table.planId, table.id),
+  check("learning_plan_versions_number_check", sql`${table.versionNumber} > 0`),
+  check("learning_plan_versions_kind_check", sql`${table.kind} IN ('create','adjust','rebalance')`),
+]);
+
+export const learningPlanItems = pgTable("learning_plan_items", {
+  planId: varchar("plan_id", { length: 200 }).notNull().references(() => learningPlans.id),
+  itemKey: varchar("item_key", { length: 200 }).notNull(),
+  lessonId: varchar("lesson_id", { length: 200 }).notNull().references(() => lessons.id),
+  subjectCode: varchar("subject_code", { length: 100 }).notNull(),
+}, (table) => [primaryKey({ columns: [table.planId, table.itemKey] })]);
+
+export const learningPlanAssignments = pgTable("learning_plan_assignments", {
+  planId: varchar("plan_id", { length: 200 }).notNull(), versionId: varchar("version_id", { length: 200 }).notNull(),
+  itemKey: varchar("item_key", { length: 200 }).notNull(), scheduledDate: date("scheduled_date", { mode: "string" }).notNull(),
+  itemOrder: integer("item_order").notNull(), durationSeconds: integer("duration_seconds").notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.versionId, table.itemKey] }),
+  uniqueIndex("learning_plan_assignments_date_order_key").on(table.versionId, table.scheduledDate, table.itemOrder),
+  foreignKey({ columns: [table.planId, table.versionId], foreignColumns: [learningPlanVersions.planId, learningPlanVersions.id] }),
+  foreignKey({ columns: [table.planId, table.itemKey], foreignColumns: [learningPlanItems.planId, learningPlanItems.itemKey] }),
+  check("learning_plan_assignments_order_check", sql`${table.itemOrder} >= 0`),
+  check("learning_plan_assignments_duration_check", sql`${table.durationSeconds} > 0`),
+]);
+
+export const learningPlanCompletions = pgTable("learning_plan_completions", {
+  planId: varchar("plan_id", { length: 200 }).notNull(), itemKey: varchar("item_key", { length: 200 }).notNull(),
+  payloadJson: jsonb("payload_json").notNull(), completedAt: timestamp("completed_at", { withTimezone: true }).notNull(),
+  completionRevision: integer("completion_revision").notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.planId, table.itemKey] }),
+  uniqueIndex("learning_plan_completions_revision_key").on(table.planId, table.completionRevision),
+  foreignKey({ columns: [table.planId, table.itemKey], foreignColumns: [learningPlanItems.planId, learningPlanItems.itemKey] }),
+  check("learning_plan_completions_revision_check", sql`${table.completionRevision} > 0`),
+]);
+
+export const learningPlanCompletionKeys = pgTable("learning_plan_completion_keys", {
+  planId: varchar("plan_id", { length: 200 }).notNull(), idempotencyKey: varchar("idempotency_key", { length: 200 }).notNull(),
+  itemKey: varchar("item_key", { length: 200 }).notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.planId, table.idempotencyKey] }),
+  foreignKey({ columns: [table.planId, table.itemKey], foreignColumns: [learningPlanCompletions.planId, learningPlanCompletions.itemKey] }),
+]);
+
+export const learningPlanProposals = pgTable("learning_plan_proposals", {
+  id: varchar("id", { length: 200 }).primaryKey(),
+  studentId: varchar("student_id", { length: 100 }).notNull().references(() => students.id),
+  targetPlanId: varchar("target_plan_id", { length: 200 }).notNull(), expectedPlanId: varchar("expected_plan_id", { length: 200 }),
+  expectedBasisJson: jsonb("expected_basis_json").notNull(), inputJson: jsonb("input_json").notNull(),
+  status: varchar("status", { length: 20 }).notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull(), expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  confirmedAt: timestamp("confirmed_at", { withTimezone: true }), confirmedVersionId: varchar("confirmed_version_id", { length: 200 }),
+  resultJson: jsonb("result_json"),
+}, (table) => [
+  foreignKey({ columns: [table.studentId, table.expectedPlanId], foreignColumns: [learningPlans.studentId, learningPlans.id] }),
+  foreignKey({ columns: [table.targetPlanId, table.confirmedVersionId], foreignColumns: [learningPlanVersions.planId, learningPlanVersions.id] }),
+  index("learning_plan_proposals_student_status_idx").on(table.studentId, table.status),
+  index("learning_plan_proposals_expires_at_idx").on(table.expiresAt),
+  check("learning_plan_proposals_status_check", sql`${table.status} IN ('pending','confirmed','expired')`),
+  check("learning_plan_proposals_expiry_check", sql`${table.expiresAt} > ${table.createdAt}`),
+  check("learning_plan_proposals_result_check", sql`(${table.status} = 'confirmed' AND ${table.confirmedAt} IS NOT NULL
+    AND ${table.confirmedVersionId} IS NOT NULL AND ${table.resultJson} IS NOT NULL) OR (${table.status} <> 'confirmed'
+    AND ${table.confirmedAt} IS NULL AND ${table.confirmedVersionId} IS NULL AND ${table.resultJson} IS NULL)`),
 ]);

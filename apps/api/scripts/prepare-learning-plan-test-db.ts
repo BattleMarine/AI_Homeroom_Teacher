@@ -14,7 +14,7 @@ const apiDirectory = fileURLToPath(new URL("../", import.meta.url));
 const output = new URL(".env.learning-plan-test.local", root);
 const expectedMigrations = [
   "0000_initial_schema.sql", "0001_student_curricula.sql",
-  "0002_curriculum_read_model.sql", "0003_subject_enrollment_proposals.sql",
+  "0002_curriculum_read_model.sql", "0003_subject_enrollment_proposals.sql", "0007_learning_plans.sql",
 ];
 let stage = "안전 조건 확인";
 
@@ -58,6 +58,11 @@ try {
     { encoding: "utf8", flag: "wx", mode: 0o600 });
   console.log("새 전용 테스트 DB 생성 및 별도 로컬 환경 파일 보관 완료");
 
+  stage = "새 DB 실제 접속 대상 확인";
+  const preflight = new Pool({ connectionString: targetUrl.href });
+  try {
+    assert.equal((await preflight.query("SELECT current_database() AS name")).rows[0].name, name);
+  } finally { await preflight.end(); }
   stage = "현재 브랜치 migration 적용";
   const migration = spawnSync(process.execPath, ["--import", "tsx", "src/db/migrate.ts"], {
     cwd: apiDirectory, env: { ...process.env, DATABASE_URL: targetUrl.href }, encoding: "utf8",
