@@ -199,24 +199,33 @@ export const learningPlanItems = pgTable("learning_plan_items", {
   itemKey: varchar("item_key", { length: 200 }).notNull(),
   lessonId: varchar("lesson_id", { length: 200 }).notNull().references(() => lessons.id),
   subjectCode: varchar("subject_code", { length: 100 }).notNull(),
-}, (table) => [primaryKey({ columns: [table.planId, table.itemKey] })]);
+  itemSnapshotJson: jsonb("item_snapshot_json").notNull(),
+  positionSeconds: integer("position_seconds").notNull().default(0),
+  carryoverSinceDate: date("carryover_since_date", { mode: "string" }),
+}, (table) => [primaryKey({ columns: [table.planId, table.itemKey] }),
+  check("learning_plan_items_position_check", sql`${table.positionSeconds} >= 0 AND ${table.positionSeconds} <= (${table.itemSnapshotJson}->>'durationSeconds')::integer`),
+]);
 
 export const learningPlanAssignments = pgTable("learning_plan_assignments", {
   planId: varchar("plan_id", { length: 200 }).notNull(), versionId: varchar("version_id", { length: 200 }).notNull(),
   itemKey: varchar("item_key", { length: 200 }).notNull(), scheduledDate: date("scheduled_date", { mode: "string" }).notNull(),
   itemOrder: integer("item_order").notNull(), durationSeconds: integer("duration_seconds").notNull(),
+  segmentKey: varchar("segment_key", { length: 200 }).notNull(),
+  startOffsetSeconds: integer("start_offset_seconds").notNull(), endOffsetSeconds: integer("end_offset_seconds").notNull(),
 }, (table) => [
-  primaryKey({ columns: [table.versionId, table.itemKey] }),
+  primaryKey({ columns: [table.versionId, table.segmentKey] }),
   uniqueIndex("learning_plan_assignments_date_order_key").on(table.versionId, table.scheduledDate, table.itemOrder),
   foreignKey({ columns: [table.planId, table.versionId], foreignColumns: [learningPlanVersions.planId, learningPlanVersions.id] }),
   foreignKey({ columns: [table.planId, table.itemKey], foreignColumns: [learningPlanItems.planId, learningPlanItems.itemKey] }),
   check("learning_plan_assignments_order_check", sql`${table.itemOrder} >= 0`),
   check("learning_plan_assignments_duration_check", sql`${table.durationSeconds} > 0`),
+  check("learning_plan_assignments_segment_check", sql`${table.startOffsetSeconds} >= 0 AND ${table.endOffsetSeconds} > ${table.startOffsetSeconds}
+    AND ${table.durationSeconds} = ${table.endOffsetSeconds} - ${table.startOffsetSeconds}`),
 ]);
 
 export const learningPlanCompletions = pgTable("learning_plan_completions", {
   planId: varchar("plan_id", { length: 200 }).notNull(), itemKey: varchar("item_key", { length: 200 }).notNull(),
-  payloadJson: jsonb("payload_json").notNull(), completedAt: timestamp("completed_at", { withTimezone: true }).notNull(),
+  payloadJson: jsonb("payload_json"), completedAt: timestamp("completed_at", { withTimezone: true }).notNull(),
   completionRevision: integer("completion_revision").notNull(),
 }, (table) => [
   primaryKey({ columns: [table.planId, table.itemKey] }),
@@ -231,6 +240,33 @@ export const learningPlanCompletionKeys = pgTable("learning_plan_completion_keys
 }, (table) => [
   primaryKey({ columns: [table.planId, table.idempotencyKey] }),
   foreignKey({ columns: [table.planId, table.itemKey], foreignColumns: [learningPlanCompletions.planId, learningPlanCompletions.itemKey] }),
+]);
+
+export const learningPlanFeedbacks = pgTable("learning_plan_feedbacks", {
+  planId: varchar("plan_id", { length: 200 }).notNull(), itemKey: varchar("item_key", { length: 200 }).notNull(),
+  payloadJson: jsonb("payload_json").notNull(), submittedAt: timestamp("submitted_at", { withTimezone: true }).notNull(),
+  feedbackRevision: integer("feedback_revision").notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.planId, table.itemKey] }),
+  uniqueIndex("learning_plan_feedbacks_revision_key").on(table.planId, table.feedbackRevision),
+  foreignKey({ columns: [table.planId, table.itemKey], foreignColumns: [learningPlanCompletions.planId, learningPlanCompletions.itemKey] }),
+  check("learning_plan_feedbacks_revision_check", sql`${table.feedbackRevision} > 0`),
+]);
+
+export const learningPlanProgressEvents = pgTable("learning_plan_progress_events", {
+  id: uuid("id").primaryKey(), planId: varchar("plan_id", { length: 200 }).notNull(), itemKey: varchar("item_key", { length: 200 }).notNull(),
+  idempotencyKey: varchar("idempotency_key", { length: 200 }).notNull(),
+  positionSeconds: integer("position_seconds").notNull(), spentSeconds: integer("spent_seconds").notNull(),
+  studyDate: date("study_date", { mode: "string" }).notNull(), createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
+  executionRevision: integer("execution_revision").notNull(), requestJson: jsonb("request_json").notNull(), resultJson: jsonb("result_json").notNull(),
+}, (table) => [
+  foreignKey({ columns: [table.planId, table.itemKey], foreignColumns: [learningPlanItems.planId, learningPlanItems.itemKey] }),
+  uniqueIndex("learning_plan_progress_events_key").on(table.planId, table.idempotencyKey),
+  uniqueIndex("learning_plan_progress_events_revision_key").on(table.planId, table.executionRevision),
+  index("learning_plan_progress_events_daily_idx").on(table.planId, table.studyDate),
+  check("learning_plan_progress_events_position_check", sql`${table.positionSeconds} >= 0`),
+  check("learning_plan_progress_events_spent_check", sql`${table.spentSeconds} >= 0 AND ${table.spentSeconds} <= 86400`),
+  check("learning_plan_progress_events_revision_check", sql`${table.executionRevision} > 0`),
 ]);
 
 export const learningPlanProposals = pgTable("learning_plan_proposals", {

@@ -15,6 +15,7 @@ const output = new URL(".env.learning-plan-test.local", root);
 const expectedMigrations = [
   "0000_initial_schema.sql", "0001_student_curricula.sql",
   "0002_curriculum_read_model.sql", "0003_subject_enrollment_proposals.sql", "0007_learning_plans.sql",
+  "0008_learning_plan_segments_and_progress.sql",
 ];
 let stage = "안전 조건 확인";
 
