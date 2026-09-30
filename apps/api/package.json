@@ -9,7 +9,7 @@
     "dev:memory": "node scripts/dev-server.mjs memory",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/server.js",
-    "test": "tsx --test test/app.test.ts",
+    "test": "tsx --test test/app.test.ts test/learning-plan.validation.test.ts test/learning-plan-catalog-fixture.test.ts",
     "db:generate": "drizzle-kit generate --config drizzle.config.ts",
     "db:migrate": "tsx src/db/migrate.ts",
     "db:seed": "tsx src/db/seed.ts",
