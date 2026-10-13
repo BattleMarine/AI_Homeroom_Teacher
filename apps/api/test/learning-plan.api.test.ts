@@ -200,7 +200,10 @@ test("HTTP 저장 미연결은 mock 대신503, 부족 용량은200의명시실�
   } finally { await app.close(); await withStorage.close(); }
 });
 
-test("구조화 HTTP 생성과 기한 연장 재편성은 전체 기간에 분산하며 확정 전 기존 계획 불변", async () => {
+test("구조화 HTTP 생성과 기한 연장 재편성은 전체 기간에 분산하며 확정 전 기존 계획 불변", async (t) => {
+  // fixture.service의 시계는 buildApp 내부의 HTTP 서비스에 전달되지 않는다.
+  // Date만 고정하고 실제 편성·HTTP 처리는 유지한다. 테스트 종료 시 자동 복구된다.
+  t.mock.timers.enable({ apis: ["Date"], now: new Date("2026-09-30T15:00:00Z") });
   const f = fixture(); const app = buildApp({ learningPlanRepository: f.repository });
   try {
     const initial = await app.inject({ method: "POST", url: "/api/learning-plans/proposals/create", payload: {
@@ -225,15 +228,49 @@ test("구조화 HTTP 생성과 기한 연장 재편성은 전체 기간에 분�
     } });
     assert.equal(rebalance.statusCode, 200); assert.equal(rebalance.json().kind, "proposed");
     const candidate = f.state.saved.at(-1)!.candidate;
+    assert.ok(candidate.items.every((item) => !item.carryoverSinceDate), "기한 연장 검사는 아직 이월이 없는 계획을 사용해야 합니다.");
     const quality = assertLearningPlanDistribution({ items: candidate.items, days: candidate.normalizedDays,
       progress: candidate.progressSnapshot!.progress, dailyUsage: candidate.progressSnapshot!.dailyUsage, assignments: candidate.assignments });
     assert.ok(quality.lastAssignedDate! > first.lastAssignedDate!);
     assert.equal(candidate.conditions.availableSecondsPerDay, 2000);
-    // 기존 todayTime은 명시한 재편성 시작일에만 적용하며 평소 상한은 바꾸지 않는다.
+    // todayTime은 서울 오늘(10월 1일)에만 적용하며 평소 상한은 바꾸지 않는다.
     assert.deepEqual(candidate.conditions.dateOverrides, [{ date: "2026-10-01", totalSeconds: 1000 }]);
     assert.deepEqual(candidate.items.map((entry) => entry.itemKey), generated.items.map((entry) => entry.itemKey));
     assert.equal(JSON.stringify(f.state.version), before);
     const stillCurrent = (await app.inject("/api/learning-plans?studentId=student")).json();
     assert.deepEqual(stillCurrent.version.candidate.assignments, generated.assignments);
+  } finally { await app.close(); }
+});
+
+test("구조화 HTTP는 지난 예정 분량을 이월하며 오늘 시간은 재편성 시작일과 구분한다", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"], now: new Date("2026-10-12T15:00:00Z") });
+  const f = fixture(); const app = buildApp({ learningPlanRepository: f.repository });
+  try {
+    const initial = await app.inject({ method: "POST", url: "/api/learning-plans/proposals/create", payload: {
+      ...create, deadlineDate: "2026-10-12", availableSecondsPerDay: 2000,
+      selections: [{ subjectCode: "a", courseId: "a" }, { subjectCode: "b", courseId: "b" }],
+    } });
+    assert.equal(initial.statusCode, 200); assert.equal(initial.json().kind, "proposed");
+    f.activate();
+    const current = (await app.inject("/api/learning-plans?studentId=student")).json();
+    const before = JSON.stringify(f.state.version);
+    const response = await app.inject({ method: "POST", url: "/api/learning-plans/plan/proposals/rebalance", payload: {
+      studentId: "student", expectedBasis: current.basis, fromDate: "2026-10-12", deadlineDate: "2026-10-24",
+      todayTime: { mode: "total", seconds: 1000 },
+    } });
+    assert.equal(response.statusCode, 200); assert.equal(response.json().kind, "proposed");
+    const candidate = f.state.saved.at(-1)!.candidate;
+    assert.equal(candidate.conditions.startDate, "2026-10-12");
+    assert.deepEqual(candidate.conditions.dateOverrides, [{ date: "2026-10-13", totalSeconds: 1000 }]);
+    assert.equal(candidate.normalizedDays.find((day) => day.date === "2026-10-12")!.capacitySeconds, 2000);
+    assert.equal(candidate.normalizedDays.find((day) => day.date === "2026-10-13")!.capacitySeconds, 1000);
+    assert.equal(candidate.items.length, 4);
+    for (const item of candidate.items) {
+      const earliest = current.version.candidate.assignments
+        .filter((segment: { itemKey: string }) => segment.itemKey === item.itemKey)
+        .map((segment: { date: string }) => segment.date).sort()[0];
+      assert.equal(item.carryoverSinceDate, earliest);
+    }
+    assert.equal(JSON.stringify(f.state.version), before, "이월 제안만으로 현재 계획을 바꾸면 안 됩니다.");
   } finally { await app.close(); }
 });
