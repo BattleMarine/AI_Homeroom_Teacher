@@ -6,6 +6,7 @@ import { learningPlanCatalogHash } from "../src/learning-plan/learning-plan.cata
 import { LearningPlanRepositoryError, type LearningPlanReadBasisResult, type LearningPlanRepository, type LearningPlanSaveProposalInput,
   type LearningPlanVersion, type LearningPlanHeader } from "../src/learning-plan/learning-plan.repository.js";
 import type { CourseCatalog } from "../src/course-catalog/course-catalog.types.js";
+import { assertLearningPlanDistribution } from "./helpers/learning-plan-distribution-check.js";
 
 function catalog(id: string, lengths: number[]): CourseCatalog {
   return { course: { id, title: id, primarySubject: id, includedSubjects: [id], provider: { id: "p", name: "검사" }, instructor: { id: "i", name: "검사" },
@@ -197,4 +198,42 @@ test("HTTP 저장 미연결은 mock 대신503, 부족 용량은200의명시실�
     assert.equal(result.statusCode, 200); assert.equal(result.json().kind, "not-plannable"); assert.equal(result.json().proposal, null);
     assert.equal(f.state.saved.length, 0);
   } finally { await app.close(); await withStorage.close(); }
+});
+
+test("구조화 HTTP 생성과 기한 연장 재편성은 전체 기간에 분산하며 확정 전 기존 계획 불변", async () => {
+  const f = fixture(); const app = buildApp({ learningPlanRepository: f.repository });
+  try {
+    const initial = await app.inject({ method: "POST", url: "/api/learning-plans/proposals/create", payload: {
+      ...create, deadlineDate: "2026-10-12", availableSecondsPerDay: 2000,
+      selections: [{ subjectCode: "a", courseId: "a" }, { subjectCode: "b", courseId: "b" }],
+    } });
+    assert.equal(initial.statusCode, 200); assert.equal(initial.json().kind, "proposed");
+    assert.equal(f.state.plan, null);
+    const generated = f.state.saved.at(-1)!.candidate;
+    const first = assertLearningPlanDistribution({ items: generated.items, days: generated.normalizedDays,
+      progress: [], dailyUsage: [], assignments: generated.assignments });
+    assert.ok(first.lastAssignedDate! >= "2026-10-10");
+    assert.ok(generated.assignments.every((segment) => segment.durationSeconds === 1000));
+    assert.deepEqual(generated.conditions.dateOverrides, []);
+    assert.ok(generated.normalizedDays.every((day) => day.capacitySeconds === 2000));
+    f.activate();
+    const current = (await app.inject("/api/learning-plans?studentId=student")).json();
+    const before = JSON.stringify(f.state.version);
+    const rebalance = await app.inject({ method: "POST", url: "/api/learning-plans/plan/proposals/rebalance", payload: {
+      studentId: "student", expectedBasis: current.basis, fromDate: "2026-10-01", deadlineDate: "2026-10-24",
+      todayTime: { mode: "total", seconds: 1000 },
+    } });
+    assert.equal(rebalance.statusCode, 200); assert.equal(rebalance.json().kind, "proposed");
+    const candidate = f.state.saved.at(-1)!.candidate;
+    const quality = assertLearningPlanDistribution({ items: candidate.items, days: candidate.normalizedDays,
+      progress: candidate.progressSnapshot!.progress, dailyUsage: candidate.progressSnapshot!.dailyUsage, assignments: candidate.assignments });
+    assert.ok(quality.lastAssignedDate! > first.lastAssignedDate!);
+    assert.equal(candidate.conditions.availableSecondsPerDay, 2000);
+    // 기존 todayTime은 명시한 재편성 시작일에만 적용하며 평소 상한은 바꾸지 않는다.
+    assert.deepEqual(candidate.conditions.dateOverrides, [{ date: "2026-10-01", totalSeconds: 1000 }]);
+    assert.deepEqual(candidate.items.map((entry) => entry.itemKey), generated.items.map((entry) => entry.itemKey));
+    assert.equal(JSON.stringify(f.state.version), before);
+    const stillCurrent = (await app.inject("/api/learning-plans?studentId=student")).json();
+    assert.deepEqual(stillCurrent.version.candidate.assignments, generated.assignments);
+  } finally { await app.close(); }
 });
