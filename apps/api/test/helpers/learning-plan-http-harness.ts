@@ -25,17 +25,20 @@ export async function openLearningPlanTestPool(): Promise<Pool> {
 
 export type LearningPlanHttpServer = {
   pid: number;
-  request<T>(path: string, body?: unknown, expectedStatus?: number): Promise<T>;
+  /** 임시 프록시 연결에만 사용하며 로그·보고서에 출력하지 않는다. */
+  origin: string;
+  request<T>(path: string, body?: unknown, expectedStatus?: number, timeoutMs?: number): Promise<T>;
   stop(): Promise<void>;
 };
 
 /** 앱 객체 재생성 대신 실제 서버 OS 프로세스를 실행한다. 접속 주소와 서버 로그는 출력하지 않는다. */
-export async function startLearningPlanHttpServer(): Promise<LearningPlanHttpServer> {
+export async function startLearningPlanHttpServer(options: { port?: number } = {}): Promise<LearningPlanHttpServer> {
   const databaseUrl = process.env.TEST_DATABASE_URL;
   assert.ok(databaseUrl, "TEST_DATABASE_URL이 필요합니다.");
   assert.equal(process.env.VERIFY_TOOLS_ALLOW_TEST_DATABASE, "1");
   assert.match(new URL(databaseUrl).pathname, /^\/test_learning_plan_[a-f0-9]{32}$/);
-  const port = await availablePort();
+  const port = options.port ?? await availablePort();
+  assert.ok(Number.isSafeInteger(port) && port > 0 && port <= 65535);
   const baseUrl = `http://127.0.0.1:${port}`;
   const child = spawn(process.execPath, ["--import", "tsx", "src/server.ts"], {
     cwd: fileURLToPath(new URL("../../", import.meta.url)),
@@ -63,13 +66,14 @@ export async function startLearningPlanHttpServer(): Promise<LearningPlanHttpSer
     assert.ok(child.pid);
     return {
       pid: child.pid,
-      async request<T>(path: string, body?: unknown, expectedStatus = 200): Promise<T> {
+      origin: baseUrl,
+      async request<T>(path: string, body?: unknown, expectedStatus = 200, timeoutMs = 15_000): Promise<T> {
         assert.ok(path.startsWith("/api/"), "검증은 해당 서버의 API만 호출합니다.");
         const response = await fetch(`${baseUrl}${path}`, {
           method: body === undefined ? "GET" : "POST",
           headers: body === undefined ? undefined : { "content-type": "application/json" },
           body: body === undefined ? undefined : JSON.stringify(body),
-          signal: AbortSignal.timeout(15_000),
+          signal: AbortSignal.timeout(timeoutMs),
         });
         const payload = await response.json() as T;
         const code = payload && typeof payload === "object" ? (payload as { code?: unknown }).code : undefined;

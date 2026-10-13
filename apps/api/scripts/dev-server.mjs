@@ -9,6 +9,8 @@ import { Pool } from "pg";
 const mode = process.argv[2];
 const apiDirectory = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const databaseEnvironmentFile = resolve(apiDirectory, "..", "..", ".env.db.local");
+const llmEnvironmentFile = resolve(apiDirectory, "..", "..", ".env.llm.local");
+if (existsSync(llmEnvironmentFile)) process.loadEnvFile(llmEnvironmentFile);
 
 if (mode !== "postgres" && mode !== "memory") {
   throw new Error("개발 저장소 모드는 postgres 또는 memory여야 합니다.");

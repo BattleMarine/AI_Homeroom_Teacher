@@ -1,5 +1,6 @@
 import { buildApp } from "./app.js";
 import { createPostgresLearningPlanRepository } from "./learning-plan/learning-plan.postgres-repository.js";
+import { createPostgresLearningPlanStudentDirectory } from "./db/learning-plan-student-directory.js";
 import { readdir } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { getApiServerConfig, getDatabaseConfig, getPersistenceMode } from "./config.js";
@@ -53,6 +54,7 @@ const subjectEnrollmentProposalRepository = database
 const app = database
   ? buildApp({
       learningPlanRepository: createPostgresLearningPlanRepository(database.pool),
+      learningPlanStudentDirectory: createPostgresLearningPlanStudentDirectory(database.pool),
       courseCatalogRepository: createPostgresCourseCatalogRepository(database.pool),
       progressServiceResolver: (subjectCode) => createPostgresProgressService(
         createPostgresProgressStateRepository(database.pool, subjectCode),

@@ -47,8 +47,8 @@ try {
   assert.equal(created.candidate.items.length, 126);
   assert.equal(created.candidate.items.reduce((sum, item) => sum + item.durationSeconds, 0), 419_939);
   assert.equal(created.candidate.assignments.length, 126, "하루 한도에 들어가는 강의를 균형 때문에 나눴습니다.");
-  const earliestDate = [...created.candidate.assignments.map((row) => row.date)].sort()[0];
-  assert.equal(new Set(created.candidate.assignments.filter((row) => row.date === earliestDate).map((row) => row.subjectCode)).size, 3, "세 과목이 들어가는 첫 날짜에 과목을 편중했습니다.");
+  // 긴 기간의 유연 목표는 첫날 세 과목을 모두 채울 의무가 아니다.
+  // 같은 날 세 과목을 담는 검사는 별도 기간 분산 HTTP 검증의 43일 실제 입력과 순수 회귀에 둔다.
   assert.equal((await pool.query("SELECT count(*)::int AS count FROM learning_plans WHERE student_id=$1", [primary])).rows[0].count, 0);
   await server.request(`/api/learning-plans/proposals/${created.proposal.proposalId}/confirm`, { studentId: isolated, expectedBasis: created.proposal.expectedBasis }, 404);
   await confirm(primary, created);

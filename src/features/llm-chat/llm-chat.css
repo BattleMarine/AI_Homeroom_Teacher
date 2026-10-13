@@ -1,0 +1,45 @@
+.app-view-nav { display: flex; gap: 18px; padding: 12px 24px; background: white; border-bottom: 1px solid #d6dfeb; }
+.app-view-nav a { color: #174ca9; font-weight: 700; }
+.llm-chat { max-width: 900px; margin: 24px auto; padding: 24px; background: #fff; border-radius: 16px; }
+.llm-chat header { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.llm-chat h1 { margin: 8px 0; font-size: 26px; }
+.llm-notice { color: #526076; line-height: 1.6; }
+.llm-thread { height: min(52vh, 600px); min-height: 230px; overflow-y: auto; padding: 12px; background: #f4f7fc; border-radius: 10px; }
+.llm-message { padding: 14px 18px; margin: 12px 0; border-radius: 12px; background: white; max-width: 90%; overflow-wrap: anywhere; }
+.llm-message p { white-space: pre-wrap; line-height: 1.6; margin: 8px 0; }
+.llm-message.user { margin-left: auto; background: #e1edff; }
+.llm-error { color: #a12424; }
+.llm-chat form { display: grid; gap: 10px; margin-top: 16px; }
+.llm-chat textarea { width: 100%; font: inherit; resize: vertical; padding: 12px; border: 1px solid #b7c4d8; border-radius: 8px; }
+.llm-chat form button { justify-self: end; }
+.llm-chat button { padding: 9px 14px; border: 1px solid #a8bbd8; border-radius: 8px; background: #edf4ff; color: #163e7a; cursor: pointer; font: inherit; }
+.llm-chat button:disabled { opacity: .55; cursor: not-allowed; }
+.llm-chat :is(button, select, textarea, summary):focus-visible { outline: 3px solid #386ed0; outline-offset: 3px; }
+.llm-student-selector { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 14px; margin: 16px 0; background: #f4f7fc; border-radius: 10px; }
+.llm-student-selector select { min-width: 180px; max-width: 100%; padding: 8px; font: inherit; }
+.llm-student-selector p { flex-basis: 100%; margin: 0; color: #526076; }
+.llm-plan-panel, .llm-proposal-card, .llm-tool-result { border: 1px solid #ccd8e9; border-radius: 10px; margin-top: 16px; padding: 16px; overflow-wrap: anywhere; }
+.llm-plan-panel h2, .llm-proposal-card h2, .llm-tool-result h2 { margin-top: 0; font-size: 19px; }
+.llm-plan-panel header { flex-wrap: wrap; }
+.llm-comparison { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.llm-comparison > div { background: #f4f7fc; padding: 12px; border-radius: 8px; }
+.llm-comparison h3 { margin-top: 0; font-size: 16px; }
+.llm-conditions { display: grid; gap: 6px; margin: 0; }
+.llm-conditions > div { display: flex; flex-wrap: wrap; gap: 8px; }
+.llm-conditions dt { color: #526076; }
+.llm-conditions dd { margin: 0; font-weight: 600; }
+.llm-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
+.llm-chat summary { cursor: pointer; padding: 8px 0; }
+.llm-table-scroll { max-height: 320px; overflow: auto; }
+.llm-chat table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.llm-chat caption { text-align: left; padding: 8px 0; color: #526076; }
+.llm-chat th, .llm-chat td { text-align: left; border-bottom: 1px solid #d6dfeb; padding: 8px; vertical-align: top; }
+.llm-chat th { background: #f4f7fc; }
+.llm-feedback { color: #174c36; }
+.llm-record-panel fieldset { display: grid; gap: 10px; min-width: 0; padding: 14px; border: 1px solid #ccd8e9; }
+.llm-record-panel :is(select, input[type="number"]) { width: 100%; min-width: 0; padding: 8px; font: inherit; }
+.llm-record-panel select { text-overflow: ellipsis; }
+.llm-chat :is(input, select):focus-visible { outline: 3px solid #386ed0; outline-offset: 3px; }
+.llm-record-retry { padding: 12px; background: #fff4df; }
+@media (max-width: 600px) { .llm-chat { margin: 8px; padding: 16px; } .llm-chat h1 { font-size: 21px; } }
+@media (max-width: 600px) { .llm-comparison { grid-template-columns: 1fr; } .llm-chat header { flex-wrap: wrap; } }
