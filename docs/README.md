@@ -1,96 +1,33 @@
 # 문서 인덱스
 
-이 폴더는 AI 담임 서비스 데모의 프로젝트 구조, 구현 범위, 화면 흐름, 데이터 개념을 정리하기 위한 문서 공간입니다.
+## 읽는 순서
 
-현재 단계의 목표는 구현된 데모가 다음 질문에 계속 맞춰져 있는지 확인하는 것입니다.
+1. [README](../README.md): 제품 목표·범위·완료 기준.
+2. [AGENTS](../AGENTS.md): 개발 절차·책임·검증 지침.
+3. [실행 로드맵](./learning-plan-roadmap.md)과 아래 문서 중 현재 작업에 필요한 것만 읽는다.
 
-```text
-AI 담임이 사전 정의된 커리큘럼을 기반으로 오늘 수업을 편성하고,
-학생의 요구사항과 학습 결과에 따라 다음 수업을 조율하는 경험을
-어떤 구조로 구현할 것인가?
-```
-
-## 문서 목록
-
-| 문서 | 목적 |
+| 활성 문서 | 용도 |
 | --- | --- |
-| [project-structure.md](./project-structure.md) | 전체 폴더/파일 트리와 각 폴더의 책임을 정의합니다. |
-| [demo-flow.md](./demo-flow.md) | 데모에서 보여줄 화면 흐름과 사용자 행동 흐름을 정리합니다. |
-| [screen-spec.md](./screen-spec.md) | 정적 화면 구현 전 화면별 표시 항목, 사용자 행동, 완료 기준을 정의합니다. |
-| [domain-model.md](./domain-model.md) | 커리큘럼, 학생 상태, 오늘 수업, 강의별 학습 기록 등 핵심 데이터 개념을 정리합니다. |
-| [orchestration-rules.md](./orchestration-rules.md) | 규칙 기반 오늘 수업 생성, 요구사항 반영, 다음 수업 조율 기준을 정의합니다. |
-| [curriculum-adjustment-design.md](./curriculum-adjustment-design.md) | AI 담임이 내부 조율 도구로 복합 요청을 반영하고, 편성안을 먼저 제안하는 방향을 정의합니다. |
-| [implementation-roadmap.md](./implementation-roadmap.md) | 구현 순서와 각 단계에서 만들 파일 범위를 정리합니다. |
-| [repository-management.md](./repository-management.md) | GitHub 관리 시 제외해야 할 민감 정보, 로그, 임시 산출물 기준을 정리합니다. |
-| [backend-api-foundation.md](./backend-api-foundation.md) | 프론트엔드와 분리된 mock API 서버의 책임, 초기 엔드포인트, 환경 변수 원칙을 정리합니다. |
-| [backend-api-guide.md](./backend-api-guide.md) | 현재 백엔드 구현과 일치하는 HTTP 메서드, 요청·응답 예시, 오류 조건, 프론트 전환 순서를 제공합니다. |
-| [curriculum-recommendation-algorithm.md](./curriculum-recommendation-algorithm.md) | 강좌 카탈로그를 이용한 규칙 기반 커리큘럼 추천 조건, 처리 순서, 한계와 DB 전환 지점을 정의합니다. |
-| [backend-development-brief.md](./backend-development-brief.md) | 백엔드 개발 세션이 알아야 할 제품 목표, 책임 경계, 구현 단계, 품질·보안 기준을 정리합니다. |
-| [database-development-plan.md](./database-development-plan.md) | PostgreSQL 기초 테이블, 저장소 계층, 기존 API의 DB 전환 순서와 완료 기준을 정리합니다. |
-| [student-curriculum-database-schema.md](./student-curriculum-database-schema.md) | 현재 학생별 커리큘럼·버전·실행 상태 스키마와 데이터 원본 책임을 정리합니다. |
-| [database-operations.md](./database-operations.md) | 로컬 PostgreSQL 실행, 마이그레이션, seed, 검증과 초기화 절차를 제공합니다. |
-| [postgres-frontend-read-model-design.md](./postgres-frontend-read-model-design.md) | PostgreSQL 현재 버전을 학습 화면 API의 원본으로 연결하는 설계를 정의합니다. |
-| [teacher-llm-api.md](./teacher-llm-api.md) | AI 담임 LLM API의 mock 구현, 교체 가능한 서비스 계약, 실제 LLM 전환 원칙을 정리합니다. |
-| [prompts/backend-development-session.md](./prompts/backend-development-session.md) | 별도 백엔드 개발 세션을 시작할 때 사용할 작업 프롬프트를 제공합니다. |
-| [claims/README.md](./claims/README.md) | 프론트엔드와 백엔드 사이의 문제를 클레임 문서로 기록하고 응답하는 협업 규칙을 정리합니다. |
+| [학습 계획 로드맵](./learning-plan-roadmap.md) | 독립 도구 중심 4단계와 인수 기준·미결 선택, 기간 전체 분산 보완의 전후 비교·통합 검증 |
+| [개발환경 복구](./local-development-bootstrap-guide.md) | 새 환경의 의존성·환경 파일·프록시·실행 |
+| [DB 운영](./database-operations.md) | PostgreSQL 시작·마이그레이션·seed·안전한 테스트 |
+| [전체 학습 계획 저장 계약](./learning-plan-persistence.md) | 계획·제안·완료의 PostgreSQL 저장 계약과 전용 DB 검사. 편성 엔진·HTTP·1·2단계 전체 완료를 의미하지 않음 |
+| [학습 계획 도구 API](./learning-plan-api.md) | 생성·명시 부분 조정·전체 재편성·실제 진도·첫 피드백의 구조화 HTTP 계약과 지원 범위 |
+| [아주LLM 대화와 학습 도구](./llm-chat-setup.md) | R3·R4 학생 결속·구조화 도구·명시 확정·수동 기록·로컬 설정과 검증 실행 |
+| [저장소 관리](./repository-management.md) | Git 추적·비밀값·아카이브 기준 |
+| [협업 기록 규칙](./claims/README.md) | 이슈 재현·통합 이관·응답 기록 |
 
-`docs/claims/`의 개별 문서는 로컬 세션 간 인수인계 기록이므로 Git에서 제외합니다. 저장소에는 협업 규칙인 `claims/README.md`만 추적합니다.
+로드맵의 1·2단계와 R3 실제 LLM 도구 연결은 합의 범위 검증을 통과했고 R3 독립 검토를 마쳤다. R4 최소 화면·실제 연결 검증의 통합 결과는 로드맵에서 확인하며 독립 검토·사용자 최종 판단과 구분한다. 기존 코드의 동작은 `apps/api/src/app.ts`, 도구·서비스 타입, `apps/api/src/db/schema.ts`와 migration을 확인한다. 기존 계약을 새 제품의 완료 기준으로 간주하지 않는다.
 
-## 문서 작성 기준
+## 2026-09-30 정리 기준
 
-- 문서는 모두 한국어로 작성합니다.
-- 사용자에게 보이는 UI 문구도 한국어로 설계합니다.
-- 초기 데모에서는 로그인, 결제, 관리자 페이지, RAG, 벡터 DB, 실제 영상 스트리밍을 다루지 않습니다.
-- 핵심 로직은 먼저 mock data와 규칙 기반 조율로 구현합니다.
-- LLM은 초기에는 필수가 아니며, AI 담임 코멘트와 요구사항 해석을 대체 가능한 모듈로 분리합니다.
+- 사전 정의 커리큘럼·수학 단일 데모·프론트 상태 중심 설계, 구 구현 로드맵·완료 이력은 보관했다.
+- 구 API·스키마·읽기 모델은 부분적으로 재사용 가능하더라도 목표 설계와 섞이지 않게 보관했다.
+- 이전 브랜치의 R2·R3 검토와 연결 증거도 현재 작업 요청에서 제외했다.
+- 실행·DB·저장소 운영 문서는 실제 스크립트에 맞춰 압축·정정했다.
 
-## 현재 구현 상태 요약
+보관 위치: `docs/archive/2026-09-30-fresh-start/`. 이동 목록·이유와 재작성 전 원본은 해당 폴더에만 보관한다. 기존 아카이브는 그대로 유지했다.
 
-```text
-정적 화면 구현 완료
-mock data 연결 완료
-오늘 수업 생성 로직 구현 완료
-강의별 간단 체크 반영 완료
-내부 다음 수업 조율 및 읽기 전용 진행 보고 구현 완료
-학생 요구사항 반영 구현 완료
-AI 담임 mock 코멘트 개선 완료
-localStorage 기반 데모 상태 저장 완료
-채팅 앱 기반 인터랙션 플로우 UI 구현 완료
-개발용 단계 강제 이동 컨트롤 구현 완료
-AI 담임 답변 안에 카드가 첨부되는 UI 구현 완료
-채팅 흐름에 맞춘 컴팩트 첨부 카드 UI 구현 완료
-채팅 메시지 누적 및 AI 준비 중 점 애니메이션 구현 완료
-오늘 수업·커리큘럼 맵·채팅 메시지·강의별 체크 API 연결 완료
-커리큘럼 선택·학생 상태·강의 상세·진행 보고를 백엔드 상태로 이전 완료
-AI 담임 대화 API의 mock LLM 어댑터 구현 완료
-PostgreSQL 실행·마이그레이션·seed와 핵심 상태 영속화 완료
-학생별 커리큘럼 버전, sourceId, 프레젠테이션 정보와 원자적 선택 구현 완료
-PostgreSQL 현재 버전의 학습 화면 조회 원본 전환 예정
-LLM API 연결 미구현
-```
+**archive는 로컬 기록이며 현재 요구사항·개발 우선순위·완료 기준에서 제외한다.** Git clone에는 포함되지 않는다. 재채택할 내용만 활성 문서에 명시하고 과거 문서를 일괄 복원하지 않는다.
 
-## 현재 주요 폴더
-
-```text
-docs/
-public/
-src/
-  app/
-  components/
-  features/
-    curriculum/
-    learning-check/
-    progress-orchestrator/
-    teacher-response/
-  mock/
-  types/
-apps/
-  api/
-    src/
-      db/
-      progress/
-      student-curriculum/
-```
-
-구현이 진행되면서 일부 초기 설계용 폴더는 아직 사용하지 않을 수 있습니다.
-데모 마감 전 기준 문서는 README와 실제 `src/` 구현 상태를 함께 확인합니다.
+새 문서는 구현에 필요한 계약이 정해졌을 때 추가한다. README의 기획과 AGENTS의 지침을 상세 문서마다 반복하지 않는다.

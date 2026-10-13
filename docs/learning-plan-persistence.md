@@ -6,7 +6,7 @@
 
 `apps/api/src/learning-plan/learning-plan.repository.ts`가 저장 DTO·메서드·예상 오류·단일 30분 TTL의 기준이다. 호출자는 도메인 검증을 끝낸 후보를 전달한다. 저장층은 미결 조건을 기본값으로 채우거나 최초 생성·부분 조정·재편성을 대신 계산하지 않는다.
 
-`0007_learning_plans.sql`은 기존 과목별 저장과 분리된 전체 계획을 도입한다. `0008_learning_plan_segments_and_progress.sql`은 0007을 수정하지 않고 구간·실제 진도·일별 소비·별도 피드백을 추가한다. 기존 학생·카탈로그·과목별 커리큘럼·피드백은 변경하지 않는다. 현재 두 migration은 새 전용 테스트 DB에만 적용했으며 개발·이전 테스트 DB에는 적용하지 않았다.
+`0007_learning_plans.sql`은 기존 과목별 저장과 분리된 전체 계획을 도입한다. `0008_learning_plan_segments_and_progress.sql`은 0007을 수정하지 않고 구간·실제 진도·일별 소비·별도 피드백을 추가한다. 기존 학생·카탈로그·과목별 커리큘럼·피드백은 변경하지 않는다. 적용 여부는 각 환경의 migration 이력으로 확인한다. 테스트 실행기는 개발 DB에 migration을 자동 적용하지 않는다.
 
 | 테이블 | 책임 |
 | --- | --- |
@@ -55,6 +55,16 @@
 
 ## 전용 DB 검증
 
+### R3 로컬 학생 대상 조회
+
+`apps/api/src/db/learning-plan-student-directory.ts`는 기존 학습 repository와 분리된 읽기 전용 directory다. `listStudentTargets()`는 활성 학생의 `{studentId,hasLearningPlan}`만 ID 순서로 반환하며 이름·학습 내용은 노출하지 않는다. hasLearningPlan은 현재 버전 포인터의 존재를 뜻한다. 제안만 생성된 학생은 false다. `assertStudentExists(studentId)`는 같은 활성 학생 집합을 검사하며 미존재·비활성은 NOT_FOUND, 잘못된 ID 형식은 INVALID_CANDIDATE다. 학생이나 계획을 암묵 생성하지 않는다.
+
+이는 로컬 개발 selector용이며 인증 구현이 아니다. 학생 대상을 서버 대화 binding에 결속하고 목록·이름·실제 학생 ID를 LLM에 보내지 않는 책임은 백엔드에 있다. 신규 migration·학생 등록·영구 대화 저장은 추가하지 않는다.
+
+`test/helpers/learning-plan-state-audit.ts`의 `readLearningPlanStateAudit(pool,studentId)`는 제안 행을 제외한 계획·버전·구간·실제 진도·피드백·event·key를 읽기 전용 일관 snapshot으로 반환한다. 통합 검증에서 대화의 제안 생성 전후 학습 상태 불변을 SQL로 대조할 수 있다. 검사 결과 자체를 모델 입력으로 전달하지 않는다.
+
+### 실행
+
 저장소 루트의 Git 제외 `.env.learning-plan-test.local`을 사용한다. 이전 환경 파일은 덮어쓰지 않는다. 테스트는 TEST_DATABASE_URL과 명시 허용을 요구하고 `test_learning_plan_` 전용 이름·migration 이력을 확인한다. 개발 DB URL을 테스트에 넣지 않는다.
 
 API 폴더에서:
@@ -64,6 +74,8 @@ API 폴더에서:
 node --import tsx scripts/prepare-learning-plan-test-db.ts --allow-create-test-database
 node --env-file=../../.env.learning-plan-test.local --import tsx src/db/migrate.ts
 node --env-file=../../.env.learning-plan-test.local --import tsx --test test/learning-plan.repository.test.ts
+# 위 저장 검증과 동시에 실행하지 않는다.
+node --env-file=../../.env.learning-plan-test.local --import tsx --test test/learning-plan-student-directory.test.ts
 ```
 
 같은 전용 DB 검사 명령을 저장소 루트에서 `pnpm --filter @ai-homeroom/api test:db:learning-plan`으로 실행할 수 있다. 기존 `test:db`와 비DB 기본 `test`는 별도 검사이며 이 테스트를 대신하지 않는다.

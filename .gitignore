@@ -1,5 +1,9 @@
 # 의존성
 node_modules/
+node_modules.before-wsl-*/
+
+# 로컬 디자인 검토 시안 (제품 프론트 구현과 분리)
+/prototypes/learning-studio/
 
 # 빌드 산출물
 dist/
@@ -34,6 +38,8 @@ credentials.md
 docs/private/
 # 로컬 도메인·포트·외부 API 기록
 /docs/secrets/
+# 과거 문서 아카이브는 로컬에만 보관
+/docs/archive/
 # 세션 간 클레임·요청 기록 (협업 규칙 문서는 추적)
 /docs/claims/**
 !/docs/claims/README.md
