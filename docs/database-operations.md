@@ -1,109 +1,80 @@
-# PostgreSQL 개발 환경 실행과 복구
+# PostgreSQL 개발 운영
 
-## 목적
+현재 코드의 DB 실행·복구 안내다. 기존 과목별 스키마가 새 전체 일정 설계의 정답이라는 뜻은 아니다. 구조의 실제 기준은 `apps/api/src/db/schema.ts`와 `migrations/`다.
 
-이 문서는 AI 담임 데모 백엔드의 PostgreSQL 개발 환경을 실행하고, 스키마·기준 데이터를 재현하며, 학습 상태 복구를 확인하는 절차를 설명합니다.
+## 준비와 실행
 
-PostgreSQL은 강좌·강의 카탈로그, 학생별 커리큘럼과 버전 이력, 학생별 학습 상태와 revision, 강의별 피드백 이력, 오늘 수업 조율 제안을 저장합니다. 규칙 기반 진도 판단 로직은 계속 애플리케이션 코드가 담당합니다.
+1. [개발환경 안내](./local-development-bootstrap-guide.md)에 따라 `.env.db.local`을 준비한다.
+2. Docker Desktop을 실행한다. 기존 DB를 사용할 때는 접속 대상과 데이터 보존 여부를 먼저 확인한다.
+3. 저장소 compose를 사용할 경우:
 
-## 준비
-
-1. Docker Desktop을 실행합니다.
-2. `.env.db.example`을 복사해 `.env.db.local`을 만듭니다.
-3. `.env.db.local`에 로컬 전용 `POSTGRES_PASSWORD`와 `DATABASE_URL`을 설정합니다.
-
-```powershell
-Copy-Item .env.db.example .env.db.local
-```
-
-`.env.db.local`과 실제 접속 문자열은 Git에 커밋하지 않습니다.
-
-## PostgreSQL 실행
-
-```powershell
+```bash
 docker compose --env-file .env.db.local up -d db
 docker compose ps
 ```
 
-컨테이너 이름은 `ai-homeroom-postgres`이며, 로컬 `127.0.0.1:5432`에서만 포트를 노출합니다. named volume `ai_homeroom_postgres_data`는 일반적인 `docker compose down` 이후에도 유지됩니다.
+이미 별도 컨테이너를 사용한다면 중복 생성하지 않는다. 포트·volume·이미지는 `compose.yaml`을 기준으로 확인한다. 기존 volume의 비밀번호는 환경 파일 수정만으로 바뀌지 않는다.
 
-## 스키마와 기준 데이터 적용
+## 마이그레이션·seed
 
-현재 PowerShell 세션에만 `DATABASE_URL`을 설정한 뒤 아래 명령을 실행합니다.
+DB 관리 명령은 API 개발 실행기와 달리 `.env.db.local`을 자동으로 읽지 않는다. 신뢰하는 로컬 파일을 셸에 로드하거나 안전하게 DATABASE_URL을 전달한다.
 
-```powershell
-$env:DATABASE_URL = "postgresql://사용자:비밀번호@127.0.0.1:5432/데이터베이스"
+WSL Bash 예시:
+
+```bash
+set -a
+source .env.db.local
+set +a
+pnpm --filter @ai-homeroom/api db:check
 pnpm --filter @ai-homeroom/api db:migrate
 pnpm --filter @ai-homeroom/api db:seed
-pnpm --filter @ai-homeroom/api db:check
 ```
 
-- `db:migrate`: `apps/api/src/db/migrations/`의 SQL을 순서대로 한 번만 적용합니다.
-- `db:seed`: 데모 학생 `000`, JSON 강좌·강의 목록(2026 수학+미적분 52강, 2027 국어 언어와 매체 36강, 2027 영어 41강), 안정형·압축형·문제적용형 후보 커리큘럼을 멱등 방식으로 적재합니다.
-- `db:check`: `SELECT 1`로 DB 연결을 확인합니다.
+PowerShell에서도 같은 환경 변수가 필요하다. 비밀번호를 명령문·히스토리·출력에 직접 적지 말고 로컬 환경 파일을 안전하게 로드한다.
 
-`db:migrate`와 `db:seed`는 반복 실행해도 안전합니다.
+- `db:check`: 연결 확인이며 스키마·제품 기능 전체 검증이 아니다.
+- `db:migrate`: 현재 브랜치의 SQL migration을 적용한다. 적용 이력이나 SQL을 수동 조작하지 않는다.
+- `db:seed`: 카탈로그와 검증용 초기 데이터를 적재한다. 새 검증 DB에서 먼저 사용하고 기존 DB에는 변경 범위·멱등성을 확인한 뒤 적용한다.
 
-후보 커리큘럼은 모두 `candidate` 상태로 생성됩니다. 각 후보의 pace·소개·추천 대상·AI 담임 안내는 `student_curricula.presentation_json`에 저장됩니다. 학생이 선택하면 같은 과목의 기존 `active` 후보는 다시 `candidate`가 되고, 선택한 하나만 `active`가 됩니다. 선택 상태, 해당 과목의 `student_learning_states.state_json`, 두 revision은 하나의 트랜잭션에서 함께 갱신됩니다. 표시명은 기존 API와 동일하게 `문제적용형`을 사용하며 내부 ID `practice-log`는 유지합니다.
+안정형·압축형·문제적용형 seed는 검증 자료이지 제품의 고정 계획 유형이 아니다.
 
-구조를 바꾸는 작업은 기존 `curriculum_versions`·`curriculum_steps`·`curriculum_items` 행을 수정하지 않습니다. 새 버전을 저장한 뒤 `student_curricula.current_version_id`, 과목별 실행 상태와 revision을 같은 트랜잭션에서 갱신합니다. `curriculum_steps.source_id`, `curriculum_items.source_id`는 API·규칙 엔진용 원본 식별자를 보존하므로 DB ID 문자열을 파싱하지 않습니다. `lecture` 항목에는 존재하는 `lessons.id`가 필수이며, 기준 강좌에 재생 대상이 비어 있을 때 seed는 결정적인 `mock-video:<lessonId>` 재생 대상을 DB에 보완합니다.
-## 과목 등록 제안 영속화
+## API 실행
 
-`subject_enrollment_proposals`는 새 과목 등록 제안 전용 테이블입니다. 기존 `session_adjustment_proposals`는 이미 진행 중인 과목의 오늘 수업 조율안을 저장하므로, 수명·확정 결과·강좌 연결이 다른 등록 제안과 분리했습니다.
-
-등록 제안은 서버가 발급한 `proposalId`를 기본 키 겸 중복 확정 식별자로 사용하고, 요청·계산 결과·기준 revision·만료 시각을 함께 저장합니다. 확정 시 제안 행과 해당 학생·과목의 advisory lock을 같은 트랜잭션에서 확보한 뒤, 콘텐츠 강의(orientation 제외)를 학생별 커리큘럼·첫 버전·단계·항목과 과목 실행 상태로 만듭니다. 성공하면 제안을 `confirmed`와 생성 커리큘럼 ID로 갱신하며, 같은 제안의 재확정은 기존 결과를 반환합니다. revision 충돌은 `expired`, 이미 등록된 과목은 `cancelled`로 바뀌며 어느 경우도 새 커리큘럼 행을 남기지 않습니다.
-
-## 커리큘럼 읽기 모델
-
-`GET /api/curriculum-read-model?studentId=...`은 활성 커리큘럼의 presentation·현재 버전·단계·항목과 같은 과목의 실행 상태를 하나의 읽기 전용 repeatable-read 트랜잭션에서 반환합니다.
-
-활성 커리큘럼이 없으면 `GET /api/learning-snapshot`과 읽기 모델 API는 아래 응답으로 선택 화면 전환을 요청합니다.
-
-```text
-HTTP 409
-code = CURRICULUM_SELECTION_REQUIRED
+```bash
+pnpm dev:api
 ```
 
-## API를 PostgreSQL 모드로 실행
+PostgreSQL 모드가 기본이며 실행기는 DB 연결과 현재 migration 누락을 검사한다. 실패하면 시작을 중단한다. 메모리 모드는 `pnpm dev:api-memory`로 명시한다.
 
-```powershell
-$env:PERSISTENCE_MODE = "postgres"
-$env:DATABASE_URL = "postgresql://사용자:비밀번호@127.0.0.1:5432/데이터베이스"
-$env:API_HOST = "127.0.0.1"
-$env:API_PORT = "3001"
-pnpm --filter @ai-homeroom/api dev
-```
+브랜치 변경은 DB 스키마를 되돌리지 않는다. 이전 브랜치의 추가 migration·데이터가 남아 있다면 호환성을 확인하거나 별도 DB에서 이 브랜치를 검증한다. DB 삭제를 해결책으로 자동 실행하지 않는다.
 
-`PERSISTENCE_MODE=postgres`에서는 서버가 시작 전에 DB 연결을 검증합니다. 연결 또는 마이그레이션이 누락됐을 때 메모리 저장소로 자동 전환하지 않으며, 원인을 알 수 있는 오류와 함께 시작을 중단합니다.
+## DB 테스트 안전 조건
 
-`PERSISTENCE_MODE`를 생략하거나 `memory`로 설정하면 기존 파일·메모리 저장소를 사용합니다.
+현재 `apps/api/test/db.integration.test.ts`는 **DATABASE_URL**을 읽는다. 전용 테스트 URL 변수의 자동 분리를 가정하지 않는다. URL이 없으면 DB 테스트가 skip될 수 있으며 이것은 통과가 아니다.
 
-## 검증
+1. 개발·실제 데이터와 분리된 테스트 전용 DB를 준비한다.
+2. 별도 셸에서 DATABASE_URL을 해당 전용 DB로 지정한다. 실제 값은 출력하지 않는다.
+3. 현재 migration·필요 seed와 테스트의 데이터 삭제 범위를 확인한다.
+4. 아래 명령을 실행하고 통과·실패·skip·정리 결과를 구분해 보고한다.
 
-```powershell
-pnpm --filter @ai-homeroom/api test
-$env:DATABASE_URL = "postgresql://사용자:비밀번호@127.0.0.1:5432/데이터베이스"
+```bash
 pnpm --filter @ai-homeroom/api test:db
 ```
 
-DB 통합 테스트는 다음을 검증합니다.
+기존 테스트는 고정 fixture ID의 행을 삭제할 수 있다. 학생 ID만 다르면 안전하다고 가정하지 않는다. 검증 후 API를 실행할 때 테스트 DB 환경이 남아 있지 않은지 확인한다.
 
-- 강좌·강의 카탈로그의 PostgreSQL 조회
-- 커리큘럼 선택과 강의 피드백 뒤 서버 재시작 상태 복구
-- revision 증가와 피드백 이벤트 기록
-- 조율안의 한 번만 확정 처리와 오래된 revision의 `409` 응답
-- 후보 커리큘럼 하나만 활성화되는 선택 처리
-- 커리큘럼 새 버전 저장 시 이전 버전 보존, 잘못된 강의 연결의 전체 롤백
-- 선택 전 `409 CURRICULUM_SELECTION_REQUIRED`와 원자적 선택·실행 상태 갱신
-- presentation 메타데이터·sourceId를 포함한 repeatable-read 읽기 모델
-- 과목 등록 제안의 재시작 후 확정, 중복 확정, 만료·revision 충돌 거절과 orientation 제외
+전체 일정 검사는 `.env.learning-plan-test.local`의 전용 DB 설정을 사용한다. 허용 변수·전용 DB 식별·정리 범위는 [저장 계약](./learning-plan-persistence.md)의 실행 조건을 따른다. 같은 DB에 쓰는 검사는 순차 실행하며 개발 API의 환경과 섞지 않는다.
 
-## 개발 데이터 초기화
-
-아래 명령은 named volume과 모든 로컬 DB 데이터를 삭제합니다. 개발 데이터를 완전히 초기화할 때만 명시적으로 실행합니다.
-
-```powershell
-docker compose --env-file .env.db.local down -v
+```bash
+pnpm --filter @ai-homeroom/api test:db:learning-plan
+pnpm --filter @ai-homeroom/api verify:learning-plan
+pnpm --filter @ai-homeroom/api verify:learning-plan:distribution-http
 ```
 
-초기화 뒤에는 컨테이너를 다시 실행하고 `db:migrate`, `db:seed`를 순서대로 실행합니다.
+기간 분산 HTTP 검사는 실제 카탈로그 전체와 자체 생성한 가상학생으로 제안·확정·부분 수강·완료·피드백을 검증하고, API·독립 SQL·실제 서버 프로세스 재시작 결과를 대조한 뒤 자체 데이터를 정리한다. 모델은 호출하지 않는다. DB 없는 공개 파일 카탈로그 품질 검사는 `pnpm --filter @ai-homeroom/api verify:learning-plan:distribution`으로 실행한다. 지표·허용 편차·전후 결과는 [로드맵](./learning-plan-roadmap.md)의 기간 전체 분산 절을 따른다.
+
+## 중지·복구
+
+일반 중지는 `docker compose stop db`를 사용한다. volume 삭제·DB 초기화·파괴적 migration은 대상과 복구 수단을 확인하고 사용자 승인 후 수행한다. 이 문서는 초기화를 자동 실행할 권한을 부여하지 않는다.
+
+실제 접속 정보·dump·volume·로그는 Git에 넣지 않는다. DB 오류를 메모리 상태로 대체하지 말고 원인과 차단 조건을 보고한다.

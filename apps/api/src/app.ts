@@ -1,4 +1,10 @@
 import Fastify from "fastify";
+import { registerChatRoutes } from "./llm-chat/llm-chat.js";
+import type { ChatService } from "./llm-chat/llm-chat.js";
+import type { LearningPlanStudentDirectory } from "./db/learning-plan-student-directory.js";
+import { createLearningPlanService } from "./learning-plan/learning-plan.service.js";
+import { registerLearningPlanRoutes } from "./learning-plan/learning-plan.routes.js";
+import type { LearningPlanRepository } from "./learning-plan/learning-plan.repository.js";
 import { createFileCourseCatalogRepository } from "./course-catalog/course-catalog.file-repository.js";
 import type { CourseCatalogCourse, CourseCatalogRepository } from "./course-catalog/course-catalog.types.js";
 import { createCurriculumRecommendationService } from "./curriculum-recommendation/curriculum-recommendation.service.js";
@@ -243,6 +249,9 @@ type LearningScope = {
 type ProgressServiceResolver = (subjectCode: string) => ProgressService;
 
 type AppDependencies = {
+  learningPlanRepository?: LearningPlanRepository;
+  learningPlanStudentDirectory?: LearningPlanStudentDirectory;
+  chatService?: ChatService;
   teacherLlmService?: TeacherLlmService;
   progressService?: ProgressService;
   courseCatalogRepository?: CourseCatalogRepository;
@@ -255,6 +264,9 @@ type AppDependencies = {
 };
 
 export function buildApp({
+  learningPlanRepository,
+  learningPlanStudentDirectory,
+  chatService,
   teacherLlmService = createTeacherLlmService(),
   progressService = createMemoryProgressService(),
   courseCatalogRepository = createFileCourseCatalogRepository(),
@@ -265,7 +277,10 @@ export function buildApp({
   subjectEnrollmentProposalRepository,
   progressServiceResolver,
 }: AppDependencies = {}) {
-  const app = Fastify({ logger: true, disableRequestLogging: true });
+  const app = Fastify({ logger: true, disableRequestLogging: true, ajv: { customOptions: { removeAdditional: false } } });
+  registerLearningPlanRoutes(app, learningPlanRepository);
+  registerChatRoutes(app, chatService, { directory: learningPlanStudentDirectory, catalog: courseCatalogRepository,
+    planService: learningPlanRepository ? createLearningPlanService(learningPlanRepository) : undefined });
   const dataSource = studentCurriculumRepository ? "postgres" : "mock";
   const catalogDataSource = dataSource === "postgres" ? "postgres" : "file";
   app.setErrorHandler((error, _request, reply) => {

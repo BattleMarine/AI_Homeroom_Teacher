@@ -9,12 +9,17 @@
     "dev:memory": "node scripts/dev-server.mjs memory",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/server.js",
-    "test": "tsx --test test/app.test.ts",
+    "test": "tsx --test test/app.test.ts test/learning-plan.validation.test.ts test/learning-plan.scheduler.test.ts test/learning-plan.api.test.ts test/learning-plan-catalog-fixture.test.ts test/learning-plan-distribution-check.test.ts test/llm-chat.test.ts test/llm-chat-tools.test.ts",
     "db:generate": "drizzle-kit generate --config drizzle.config.ts",
     "db:migrate": "tsx src/db/migrate.ts",
     "db:seed": "tsx src/db/seed.ts",
     "db:check": "tsx src/db/check.ts",
-    "test:db": "tsx --test test/db.integration.test.ts"
+    "test:db": "tsx --test test/db.integration.test.ts",
+    "test:db:learning-plan": "node --env-file=../../.env.learning-plan-test.local --import tsx --test test/learning-plan.repository.test.ts test/learning-plan-student-directory.test.ts",
+    "verify:learning-plan": "node --env-file=../../.env.learning-plan-test.local --import tsx scripts/verify-learning-plan-http.ts",
+    "verify:learning-plan:distribution": "node --import tsx scripts/verify-learning-plan-distribution.ts",
+    "verify:learning-plan:distribution-http": "node --env-file=../../.env.learning-plan-test.local --import tsx scripts/verify-learning-plan-distribution-http.ts",
+    "verify:learning-plan:llm": "node --env-file=../../.env.learning-plan-test.local --env-file=../../.env.llm.local --import tsx scripts/verify-learning-plan-llm.ts"
   },
   "dependencies": {
     "drizzle-orm": "^0.45.2",
